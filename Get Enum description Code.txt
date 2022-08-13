@@ -1,0 +1,240 @@
+// -----------------------------------------------------------------------
+// <copyright file="EnumExtensions.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+// -----------------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Reflection;
+using JetBrains.Annotations;
+
+namespace Foundation.Coding.Extensions
+{
+    public static class EnumExtensions
+    {
+        public static string GetEnumAttributeDescription<T>(this Enum value)
+            where T : Attribute
+        {
+            FieldInfo fi = value.GetType().GetField(value.ToString());
+
+            if (fi == null)
+            {
+                // the value of the enum might now actually translate to a enum member.
+                return value.ToString();
+            }
+
+            var attributes = fi.GetCustomAttributes(typeof(T), false);
+
+            if (attributes.Length > 0 && attributes[0] is DescriptionAttribute)
+            {
+                return ((DescriptionAttribute)attributes[0]).Description;
+            }
+
+            return value.ToString();
+        }
+
+        public static string GetEnumDescription(this Enum value)
+        {
+            FieldInfo fi = value.GetType().GetField(value.ToString());
+
+            if (fi == null)
+            {
+                // the value of the enum might now actually translate to a enum member.
+                return value.ToString();
+            }
+
+            var attributes = fi.GetCustomAttributes(typeof(DescriptionAttribute), false) as DescriptionAttribute[];
+
+            if (attributes != null && attributes.Length > 0)
+            {
+                return attributes[0].Description;
+            }
+
+            return value.ToString();
+        }
+
+        /// <summary>
+        /// Gets the flags.
+        /// </summary>
+        /// <example>
+        /// enum Example
+        /// {
+        ///    Bar = 1,
+        ///    Baz = 2,
+        ///    Boo = 3
+        /// }
+        ///
+        /// (Example.Bar | Example.Baz).GetFlags() returns 'Boo'
+        /// </example>
+        /// <param name="value">The value.</param>
+        /// <returns>IEnumerable&lt;Enum&gt;.</returns>
+        public static IList<Enum> GetFlags(this Enum value)
+        {
+            // http://stackoverflow.com/a/4171168
+            return GetFlags(value, Enum.GetValues(value.GetType()).Cast<Enum>().ToArray());
+        }
+
+        /// <example>
+        /// enum Example
+        /// {
+        ///    Bar = 1,
+        ///    Baz = 2,
+        ///    Boo = 3
+        /// }
+        ///
+        /// (Example.Bar | Example.Baz).GetIndividualFlags() returns 'Bar, Baz'
+        /// </example>
+        public static IList<Enum> GetIndividualFlags(this Enum value)
+        {
+            // http://stackoverflow.com/a/4171168
+            return GetFlags(value, GetFlagValues(value.GetType()).ToArray());
+        }
+
+        /// <summary>
+        /// Gets the name of the enum's value without having to cast.
+        /// </summary>
+        /// <param name="enumValue"></param>
+        /// <returns></returns>
+        public static string GetName(this Enum enumValue)
+        {
+            return Enum.GetName(enumValue.GetType(), enumValue);
+        }
+
+        public static bool In<T>(this T val, params T[] values)
+            where T : struct
+        {
+            return values.Contains(val);
+        }
+
+        /// <summary>
+        /// Parses an Enums literal description to its value
+        /// </summary>
+        /// <typeparam name="T">The Enum type</typeparam>
+        /// <param name="description">The text literal to parse</param>
+        /// <remarks>
+        /// This method expects Enum members to be decorated with System.ComponentModel.DescriptionAttribute
+        /// Behavior is undefined if multiple DescriptionAttributes are applied to a single a member
+        /// or if multiple members share the same description value
+        /// </remarks>
+        /// <returns>The first matching enum value or an exception</returns>
+        public static T ParseDescription<T>(this string description)
+            where T : struct, IConvertible
+        {
+            if (!typeof(T).IsEnum)
+            {
+                throw new ArgumentException("T must be an enumerated type");
+            }
+
+            foreach (var enumValue in Enum.GetValues(typeof(T)))
+            {
+                if ((enumValue as Enum).GetEnumDescription().EqualsIgnoreCase(description))
+                {
+                    return (T)enumValue;
+                }
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(description), description, typeof(T).FullName + " does not contain the supplied description.");
+        }
+
+        /// <summary>
+        /// Parse String to Enum Type
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public static T ParseEnum<T>([NotNull] this string value)
+        {
+            return (T)Enum.Parse(typeof(T), value, true);
+        }
+
+        public static IList<string> ToDescriptions(this IEnumerable<Enum> enumValues)
+        {
+            return enumValues.Select(x => x.GetEnumDescription()).ToList();
+        }
+
+        public static int ToInt(this Enum enumValue)
+        {
+            return Convert.ToInt32(enumValue);
+        }
+
+        public static long ToLong(this Enum enumValue)
+        {
+            return Convert.ToInt64(enumValue);
+        }
+
+        private static bool EqualsIgnoreCase(this string first, string second)
+        {
+            return string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static IList<Enum> GetFlags(Enum value, Enum[] values)
+        {
+            // http://stackoverflow.com/a/4171168
+            ulong bits = Convert.ToUInt64(value);
+            List<Enum> results = new List<Enum>();
+            for (int i = values.Length - 1; i >= 0; i--)
+            {
+                ulong mask = Convert.ToUInt64(values[i]);
+                if (i == 0 && mask == 0L)
+                {
+                    break;
+                }
+
+                if ((bits & mask) == mask)
+                {
+                    results.Add(values[i]);
+                    bits -= mask;
+                }
+            }
+
+            if (bits != 0L)
+            {
+                return Enumerable.Empty<Enum>().ToList();
+            }
+
+            if (Convert.ToUInt64(value) != 0L)
+            {
+                return results.Reverse<Enum>().ToList();
+            }
+
+            if (bits == Convert.ToUInt64(value) && values.Length > 0 && Convert.ToUInt64(values[0]) == 0L)
+            {
+                return values.Take(1).ToList();
+            }
+
+            return Enumerable.Empty<Enum>().ToList();
+        }
+
+        private static IEnumerable<Enum> GetFlagValues(Type enumType)
+        {
+            // http://stackoverflow.com/a/4171168
+            ulong flag = 0x1;
+            foreach (var value in Enum.GetValues(enumType).Cast<Enum>())
+            {
+                // yield return value;
+                ulong bits = Convert.ToUInt64(value);
+                if (bits == 0L)
+                {
+                    continue; // skip the zero value
+                }
+
+                while (flag < bits)
+                {
+                    flag <<= 1;
+                }
+
+                if (flag == bits)
+                {
+                    yield return value;
+                }
+            }
+        }
+    }
+}

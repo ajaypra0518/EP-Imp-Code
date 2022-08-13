@@ -1,0 +1,262 @@
+// -----------------------------------------------------------------------
+// <copyright file="CreateInvoiceCalendarAssociationHandlerTest.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+// -----------------------------------------------------------------------
+
+using System;
+using Estream.Accounting.Common.Enums;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Constants;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Entities;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Handlers;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Transitions;
+using Estream.Accounting.UnitTests.Presentation.InvoiceCalendarDomain.ObjectMothers;
+using Estream.Common.Entitlements.Data;
+using FluentAssertions;
+using Foundation.Coding;
+using Foundation.Coding.ErrorHandling;
+using Foundation.NServiceBus;
+using Highway.Data;
+using Highway.Data.Contexts;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Estream.Accounting.UnitTests.Presentation.InvoiceCalendarDomain.TransitionsHandler
+{
+    [TestFixture]
+    public class CreateInvoiceCalendarAssociationHandlerTest
+    {
+        private IDataContext _context;
+        private ISecuredDomainRepositoryFactory _domainRepository;
+        private IRepository _repository;
+        private ITransactionalMessageSession _messageSession;
+        private IProvideNow _nowProvider;
+
+        [SetUp]
+        public void RunBeforeEachTest()
+        {
+            _domainRepository = Substitute.For<ISecuredDomainRepositoryFactory>();
+            _messageSession = Substitute.For<ITransactionalMessageSession>();
+            _context = new InMemoryDataContext();
+            _repository = new Repository(_context);
+            _domainRepository.Create<Accounting.Presentation.InvoiceCalendarDomain.InvoiceCalendarDomain>().Returns(_repository);
+            _nowProvider = Substitute.For<IProvideNow>();
+        }
+
+        [Test]
+        public void ShouldCreateDefaultAssociations()
+        {
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.Default,
+                IsPriorPeriodAdjustmentOverride = true,
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                PaymentTermId = 1,
+                IsAllBussinessEntitySelected = true,
+                IsAllContractsSelected = true,
+                IsAllServiceFeeSelected = true
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            handler.HandleTransition(createAssociation);
+            var association = _repository.Find(new FindAll<InvoiceCalendarAssociationRule>());
+            association.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void ShouldNotCreateDefaultAssociationsItsAlreadyExistForDateRange()
+        {
+            CreateDefault();
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.Default,
+                IsPriorPeriodAdjustmentOverride = true,
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                PaymentTermId = 1,
+                IsAllBussinessEntitySelected = true,
+                IsAllContractsSelected = true,
+                IsAllServiceFeeSelected = true
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            Action action = () => handler.HandleTransition(createAssociation);
+            action.Should().Throw<VerificationException>().WithMessage(ErrorMessages.DefaultAssociationExist);
+        }
+
+        [Test]
+        public void ShouldCreateOverrideAssociationsHaveContract()
+        {
+            CreateDefault();
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                ContractIds = new long[] { 1036 },
+                AssociationTypeId = (short)InvoiceAssociationType.CalendarOverride,
+                IsPriorPeriodAdjustmentOverride = true,
+                ServiceFeeTypeIds = new long[] { 12 },
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                PaymentTermId = 1,
+                BusinessEntityIds = new long[] { 56 },
+                IsAllBussinessEntitySelected = false,
+                IsAllContractsSelected = null,
+                IsAllServiceFeeSelected = false
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            handler.HandleTransition(createAssociation);
+            var association = _repository.Find(new FindAll<InvoiceCalendarAssociationRule>().Where(x => x.AssociationTypeId == (short)InvoiceAssociationType.CalendarOverride));
+            association.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void ShouldCreateOverrideAssociationsNotHaveContractAndCustomer()
+        {
+            CreateDefault();
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.CalendarOverride,
+                IsPriorPeriodAdjustmentOverride = true,
+                ServiceFeeTypeIds = new long[] { 12 },
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                PaymentTermId = 1,
+                IsAllBussinessEntitySelected = false,
+                IsAllContractsSelected = false,
+                IsAllServiceFeeSelected = null
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            handler.HandleTransition(createAssociation);
+            var association = _repository.Find(new FindAll<InvoiceCalendarAssociationRule>().Where(x => x.AssociationTypeId == (short)InvoiceAssociationType.CalendarOverride));
+            association.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void ShouldCreateOverrideAssociationsHaveCustomer()
+        {
+            CreateDefault();
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.CalendarOverride,
+                IsPriorPeriodAdjustmentOverride = true,
+                ServiceFeeTypeIds = new long[] { 12 },
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                BusinessEntityIds = new long[] { 56 },
+                PaymentTermId = 1,
+                IsAllBussinessEntitySelected = null,
+                IsAllContractsSelected = false,
+                IsAllServiceFeeSelected = false
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            handler.HandleTransition(createAssociation);
+            var association = _repository.Find(new FindAll<InvoiceCalendarAssociationRule>().Where(x => x.AssociationTypeId == (short)InvoiceAssociationType.CalendarOverride));
+            association.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void ShouldCreateOverrideAssociationsForAllCustomerContractSerrviceFee()
+        {
+            CreateDefault();
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.CalendarOverride,
+                IsPriorPeriodAdjustmentOverride = true,
+                ServiceFeeTypeIds = null,
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                BusinessEntityIds = null,
+                ContractIds = null,
+                PaymentTermId = 1,
+                IsAllBussinessEntitySelected = true,
+                IsAllContractsSelected = true,
+                IsAllServiceFeeSelected = true
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            handler.HandleTransition(createAssociation);
+            var association = _repository.Find(new FindAll<InvoiceCalendarAssociationRule>().Where(x => x.AssociationTypeId == (short)InvoiceAssociationType.CalendarOverride));
+            association.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void ShouldNotCreateOverrideAssociationsDefaulAssociationtDoesNotExists()
+        {
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.CalendarOverride,
+                IsPriorPeriodAdjustmentOverride = true,
+                ServiceFeeTypeIds = new long[] { 12 },
+                EffectiveStartDate = new DateTime(2022, 01, 01).Date,
+                EffectiveEndDate = new DateTime(2022, 05, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                PaymentTermId = 1,
+                IsAllBussinessEntitySelected = false,
+                IsAllContractsSelected = false,
+                IsAllServiceFeeSelected = false
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            Action action = () => handler.HandleTransition(createAssociation);
+            action.Should().Throw<VerificationException>().WithMessage(ErrorMessages.DefaultAssociationNotExist);
+        }
+
+        [Test]
+        public void ShouldNotCreateOverrideAssociationsAlreadyExists()
+        {
+            CreateDefault();
+            CreateOverride();
+            var createAssociation = new CreateInvoiceCalendarAssociationTransition
+            {
+                AssetGroupId = 3,
+                CommercialAssetIds = new long[] { 3 },
+                AssociationTypeId = (short)InvoiceAssociationType.CalendarOverride,
+                IsPriorPeriodAdjustmentOverride = true,
+                ServiceFeeTypeIds = new long[] { 12 },
+                EffectiveStartDate = new DateTime(2022,02,01).Date,
+                EffectiveEndDate = new DateTime(2022, 03, 01).Date,
+                InvoiceCalendarConfigId = 100001,
+                PaymentTermId = 1,
+            };
+            var handler = new CreateInvoiceCalendarAssociationHandler(_domainRepository, _messageSession, _nowProvider);
+            Action action = () => handler.HandleTransition(createAssociation);
+            action.Should().Throw<VerificationException>().WithMessage(ErrorMessages.OverrideAssociationExist);
+        }
+
+        private void CreateDefault()
+        {
+            foreach (var association in InvoiceCalendarAssociationRuleObjectMother.DefaultAssociations())
+            {
+                _repository.Context.Add(association);
+            }
+            _repository.Context.Add(ContractObjectMother.UnregulatedTransportationOnMaplForFerrellGas);
+            _repository.Context.Commit();
+        }
+
+        private void CreateOverride()
+        {
+            _repository.Context.Add(InvoiceCalendarAssociationRuleObjectMother.OverrideAssociation);
+            _repository.Context.Commit();
+        }
+    }
+}

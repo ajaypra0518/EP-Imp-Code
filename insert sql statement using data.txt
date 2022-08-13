@@ -1,0 +1,81 @@
+/*************************************************************************************************
+*
+*  © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+*  Permission to use, copy, modify, or distribute this software source code, binaries or 
+*  related documentation, is strictly prohibited, without written consent from Enterprise.
+*  For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+*  Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+*
+*  Creation Date: 11/19/2020
+*  PBI Id:  
+*  Summary: Add price config
+**************************************************************************************************/
+
+BEGIN TRY
+    BEGIN TRAN;
+
+DECLARE @lContextMessage VARCHAR(500) = 'Add invoice calendar configs';
+
+DECLARE @lCreatedBy VARCHAR(30) = 'Feature274035';
+
+DECLARE @lCreationDateTime DATETIME2(7) = '2022-05-02 12:03:00.00';
+
+
+
+
+INSERT INTO Accounting.InvoiceCalendarConfiguration (InvoiceFrequencyPeriodTypeId,
+												Name,
+												CalendarDayId,
+												CalendarMonthId,
+												CalendarDateDay,
+												CreatedBy,
+												CreationDateTime)
+(
+SELECT CalendarConfigData.invoicefrequencyPeriodTypeId, 
+     CalendarConfigData.Name,
+	 CalendarConfigData.CalendarDay,
+	 CalendarConfigData.CalendarMonth,
+	CalendarConfigData.CalendarDateDay
+	, @lCreatedBy,
+	@lCreationDateTime  
+FROM(SELECT 
+     InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId,
+	 invoicefrequencyPeriodType.invoicefrequencyPeriodTypeId, 
+     _CalendarData.Name,
+	 _CalendarData.CalendarDay,
+	 _CalendarData.CalendarMonth,
+	 _CalendarData.CalendarDateDay
+FROM(SELECT FrequencyPeriodType,
+		   Name,
+			CalendarDay,
+			CalendarMonth,
+			CalendarDateDay
+	FROM (VALUES
+			('Month','Monthly',null	,null,null ),
+			('Weekly','Weekly-Monday',1	,NULL,NULL),
+			('Weekly','Weekly-Wednesday',4,NULL	,NULL),
+			('TwiceAMonth','TwiceAMonth',NULL,NULL	,15),
+			('Year'	,'Yearly-Sept',NULL	,9,NULL))
+			 AS CalendarData (FrequencyPeriodType, Name, CalendarDay, CalendarMonth, CalendarDateDay)) AS _CalendarData
+INNER JOIN Accounting.invoicefrequencyPeriodType ON invoicefrequencyPeriodType.Code = _CalendarData.FrequencyPeriodType 
+LEFT JOIN Accounting.InvoiceCalendarConfiguration ON InvoiceCalendarConfiguration.InvoiceFrequencyPeriodTypeId = invoicefrequencyPeriodType.invoicefrequencyPeriodTypeId 
+		AND InvoiceCalendarConfiguration.CalendarDayId =  _CalendarData.CalendarDay 
+		AND InvoiceCalendarConfiguration.CalendarMonthId =  _CalendarData.CalendarMonth 
+		AND InvoiceCalendarConfiguration.CalendarDateDay = _CalendarData.CalendarDateDay )AS CalendarConfigData
+WHERE CalendarConfigData.InvoiceCalendarConfigurationId IS NULL )
+
+
+
+
+SET @lContextMessage = 'Add invoice calendar configs'
+
+    COMMIT;
+END TRY
+BEGIN CATCH
+
+SET @lContextMessage = 'Failed to Add invoice calendar configs'
+    IF @@TRANCOUNT > 0
+        ROLLBACK TRANSACTION;
+    EXEC dbo.uspRethrowError @lContextMessage;
+END CATCH;
+

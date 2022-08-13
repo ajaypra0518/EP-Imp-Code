@@ -1,0 +1,10 @@
+WITH _RateSheetCommercialAssetXref
+        AS (SELECT RateSheetId
+                  ,CommercialAssetId
+              FROM(SELECT RateSheetId
+                         ,CommercialAssetId
+                         ,ROW_NUMBER() OVER(partition BY RateSheetId
+                          ORDER BY RateSheetId DESC) AS RateSheetCount
+                     FROM Accounting.RateSheetCommercialAssetXref
+            ) AS TotalRateSheet
+             WHERE TotalRateSheet.RateSheetCount = 1)

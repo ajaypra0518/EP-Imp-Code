@@ -1,0 +1,115 @@
+/************************************************************************************************      
+--*      
+--* © Copyright 2012, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.      
+--* Permission to use, copy, modify, or distribute this software source code, binaries or      
+--* related documentation, is strictly prohibited, without written consent from Enterprise.      
+--* For inquiries about the software, contact Enterprise: Enterprise Products Company Law      
+--* Department, 1100 Louisiana, 21st Floor, Houston, Texas 77002, phone 713-381-6500.      
+--*      
+--************************************************************************************************/
+
+/*      
+Description: This view returns data for invoice calendar search screen      
+Reason for Changes: Feature 274035      
+Author of Changes: Ajay Prajapati      
+Date: 03/24/2022      
+*/
+
+CREATE OR ALTER VIEW Accounting.vwSearchInvoiceCalendar
+AS WITH _ScheduleDate
+        AS (SELECT InvoiceCalendarSchedule.InvoiceCalendarConfigurationId
+                  ,InvoiceCalendarAssociationRule.InvoiceCalendarAssociationRuleId
+                  ,CAST(ISNULL(InvoiceCalendarSchedule.InvoicingDate,IIF(CAST(MonthCloseCalendarActivity.ActivityDateTime AS TIME) > CAST('02:59' AS TIME),DATEADD(DAY,1,MonthCloseCalendarActivity.ActivityDateTime),MonthCloseCalendarActivity.ActivityDateTime)) AS DATE) AS               InvoicingDate
+                  ,CASE
+                       WHEN(InvoiceFrequencyPeriodType.Code = 'Month'
+                            OR InvoiceFrequencyPeriodType.Code = 'Quarter'
+                            OR InvoiceFrequencyPeriodType.Code = 'Year'
+                            OR InvoiceFrequencyPeriodType.Code = 'TwiceAMonth'
+                            OR InvoiceFrequencyPeriodType.Code = 'Weekly') THEN CAST(MonthCloseCalendarActivityConfiguration.DayOfTheMonth AS VARCHAR) + ' business day'
+                       ELSE NULL
+                   END AS                                                                                                                                                                                                                                                                     DimClose
+                  ,InvoiceFrequencyPeriodType.Description AS                                                                                                                                                                                                                                  FrequencyPeriodType
+                  ,ROW_NUMBER() OVER(PARTITION BY InvoiceCalendarAssociationRule.InvoiceCalendarAssociationRuleId
+                   ORDER BY InvoiceCalendarAssociationRule.InvoiceCalendarAssociationRuleId
+                           ,CAST(ISNULL(InvoiceCalendarSchedule.InvoicingDate,IIF(CAST(MonthCloseCalendarActivity.ActivityDateTime AS TIME) > CAST('02:59' AS TIME),DATEADD(DAY,1,MonthCloseCalendarActivity.ActivityDateTime),MonthCloseCalendarActivity.ActivityDateTime)) AS DATETIME)) AS InvoiceDateRank
+              FROM Accounting.InvoiceCalendarSchedule
+                   INNER JOIN Accounting.InvoiceCalendarConfiguration
+                                         INNER JOIN Accounting.InvoiceCalendarAssociationRule
+                                      ON InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId = InvoiceCalendarAssociationRule.InvoiceCalendarConfigurationId
+                              INNER JOIN Accounting.InvoiceFrequencyPeriodType
+                                      ON InvoiceFrequencyPeriodType.InvoiceFrequencyPeriodTypeId = InvoiceCalendarConfiguration.InvoiceFrequencyPeriodTypeId
+                           ON InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId = InvoiceCalendarSchedule.InvoiceCalendarConfigurationId
+                   LEFT OUTER JOIN MasterData.MonthCloseCalendar
+                           ON MonthCloseCalendar.AssetGroupId = InvoiceCalendarAssociationRule.AssetGroupId
+                              AND (YEAR(InvoiceCalendarSchedule.BillingPeriodEndDate) = YEAR(MonthCloseCalendar.MonthYear)
+                                   AND MONTH(InvoiceCalendarSchedule.BillingPeriodEndDate) = MONTH(MonthCloseCalendar.MonthYear))
+                   LEFT OUTER JOIN MasterData.MonthCloseCalendarActivity
+                           ON MonthCloseCalendarActivity.MonthCloseCalendarId = MonthCloseCalendar.MonthCloseCalendarId
+                   LEFT OUTER JOIN MasterData.MonthCloseCalendarActivityType
+                           ON MonthCloseCalendarActivityType.MonthCloseCalendarActivityTypeId = MonthCloseCalendarActivity.MonthCloseCalendarActivityTypeId
+                   LEFT OUTER JOIN MasterData.MonthCloseCalendarActivityConfiguration
+                           ON MonthCloseCalendarActivityConfiguration.MonthCloseCalendarActivityTypeId = MonthCloseCalendarActivityType.MonthCloseCalendarActivityTypeId
+                              AND MonthCloseCalendarActivityConfiguration.AssetGroupId = InvoiceCalendarAssociationRule.AssetGroupId
+             WHERE MonthCloseCalendarActivityType.Code = 'DistributionClose'
+                   AND CAST(ISNULL(InvoiceCalendarSchedule.InvoicingDate,MonthCloseCalendarActivity.ActivityDateTime) AS DATETIME) > CAST(Framework.fn_GetApplicationDateTime() AS DATETIME))
+        SELECT InvoiceCalendarAssociationRule.InvoiceCalendarAssociationRuleId AS                                                          Id
+              ,InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId AS                                                              InvoiceCalendarConfigId
+              ,AssetGroup.AssetGroupId AS                                                                                                  AssetGroupId
+              ,AssetGroup.Name AS                                                                                                          AssetGroupName
+              ,_ScheduleDate.InvoicingDate AS                                                                                              InvoiceDate
+              ,_ScheduleDate.DimClose AS                                                                                                   DimClose
+              ,_BillingCompany.BusinessEntityId AS                                                                                         BillingCompanyId
+              ,_BillingCompany.ShortName AS                                                                                                BillingCompany
+              ,IIF(ISNULL(InvoiceCalendarAssociationRule.IsAllBusinessEntitySelected,0) = 1,'All',ISNULL(_Customer.ShortName,'')) AS       Customer
+              ,CommercialAsset.ShortName AS                                                                                                CommercialAssetName
+              ,CommercialAsset.CommercialAssetId
+              ,IIF(ISNULL(InvoiceCalendarAssociationRule.IsAllServiceFeeSelected,0) = 1,'All',ISNULL(ServiceFeeType.ServiceFeeName,'')) AS ServiceFeeName
+              ,IIF(ISNULL(InvoiceCalendarAssociationRule.IsAllContractSelected,0) = 1,'All',ISNULL(Contract.SmartCode,'')) AS              Contract
+              ,Contract.ContractId
+              ,InvoicePaymentTerm.Description AS                                                                                           PaymentTerm
+              ,InvoiceCalendarConfiguration.Name AS                                                                                        CalendarName
+              ,InvoiceFrequencyPeriodType.InvoiceFrequencyPeriodTypeId AS                                                                  CalendarTypeId
+              ,InvoiceFrequencyPeriodType.Description AS                                                                                   CalendarType
+              ,CASE
+                   WHEN InvoiceFrequencyPeriodType.Code = 'Month' THEN 'Month Close'
+                   WHEN InvoiceFrequencyPeriodType.Code = 'Quarter'
+                        OR InvoiceFrequencyPeriodType.Code = 'Year' THEN CalendarMonth.Description
+                   WHEN InvoiceFrequencyPeriodType.Code = 'TwiceAMonth' THEN CAST(InvoiceCalendarConfiguration.CalendarDateDay AS VARCHAR) + ' & Month Close'
+                   WHEN InvoiceFrequencyPeriodType.Code = 'Weekly' THEN CalendarDay.Description
+               END AS                                                                                                                      RecurrancePattern
+              ,InvoiceAssociationType.Description AS                                                                                       AssociationType
+              ,InvoiceCalendarAssociationRule.AssociationTypeId
+              ,InvoiceCalendarAssociationRule.EffectiveStartDate
+              ,InvoiceCalendarAssociationRule.EffectiveEndDate
+              ,InvoiceCalendarAssociationRule.IsAllBusinessEntitySelected
+              ,InvoiceCalendarAssociationRule.IsAllContractSelected
+              ,InvoiceCalendarAssociationRule.IsSystemDefined
+          FROM Accounting.InvoiceCalendarAssociationRule
+               INNER JOIN MasterData.AssetGroup
+                       ON AssetGroup.AssetGroupId = InvoiceCalendarAssociationRule.AssetGroupId
+               INNER JOIN MasterData.CommercialAsset
+                       ON CommercialAsset.CommercialAssetId = InvoiceCalendarAssociationRule.CommercialAssetId
+               INNER JOIN Accounting.InvoiceCalendarConfiguration
+                       ON InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId = InvoiceCalendarAssociationRule.InvoiceCalendarConfigurationId
+               INNER JOIN Accounting.InvoiceFrequencyPeriodType
+                       ON InvoiceFrequencyPeriodType.InvoiceFrequencyPeriodTypeId = InvoiceCalendarConfiguration.InvoiceFrequencyPeriodTypeId
+               INNER JOIN Accounting.InvoiceAssociationType
+                       ON InvoiceAssociationType.InvoiceAssociationTypeId = InvoiceCalendarAssociationRule.AssociationTypeId
+               INNER JOIN Accounting.InvoicePaymentTerm
+                       ON InvoicePaymentTerm.InvoicePaymentTermId = InvoiceCalendarAssociationRule.PaymentTermId
+               LEFT OUTER JOIN MasterData.BusinessEntity AS _BillingCompany
+                       ON _BillingCompany.BusinessEntityId = CommercialAsset.BusinessEntityId
+               LEFT OUTER JOIN MasterData.BusinessEntity AS _Customer
+                       ON _Customer.BusinessEntityId = InvoiceCalendarAssociationRule.BusinessEntityId
+               LEFT OUTER JOIN Accounting.ServiceFeeType
+                       ON ServiceFeeType.ServiceFeeTypeId = InvoiceCalendarAssociationRule.ServiceFeeTypeId
+               LEFT OUTER JOIN Accounting.Contract
+                       ON Contract.ContractId = InvoiceCalendarAssociationRule.ContractId
+               LEFT OUTER JOIN MasterData.CalendarMonth
+                       ON CalendarMonth.CalendarMonthId = InvoiceCalendarConfiguration.CalendarMonthId
+               LEFT OUTER JOIN MasterData.CalendarDay
+                       ON CalendarDay.CalendarDayId = InvoiceCalendarConfiguration.CalendarDayId
+               LEFT OUTER JOIN _ScheduleDate
+                       ON _ScheduleDate.InvoiceCalendarConfigurationId = InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId
+                          AND _ScheduleDate.InvoiceCalendarAssociationRuleId = InvoiceCalendarAssociationRule.InvoiceCalendarAssociationRuleId
+                          AND _ScheduleDate.InvoiceDateRank = 1;
