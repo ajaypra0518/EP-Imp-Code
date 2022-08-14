@@ -1,0 +1,1040 @@
+/************************************************************************************************
+-- © Copyright 2012 - 2018, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+-- Permission to use, copy, modify, or distribute this software source code, binaries or
+-- related documentation, is strictly prohibited, without written consent from Enterprise.
+-- For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+-- Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+*************************************************************************************************/
+
+------------------------------------------------------------------------------------------------
+-- Author              Create date          Description          
+-- Bankey, Khandelwal   24-Feb-2022         Feature-274035 Invoice Calendar Redesign
+-------------------------------------------------------------------------------------------------
+
+DROP VIEW IF EXISTS Accounting.vwInvoiceCalendarListings;
+GO
+
+DROP VIEW IF EXISTS Accounting.vwContractInvoiceConfigurationInvoiceCalendarConfigurationXref;
+GO
+
+DROP VIEW IF EXISTS Accounting.vwBillingRecordForInvoicing;
+GO
+
+DROP VIEW IF EXISTS ETLStaging.vwDataLoadInvoiceCalendarDetail;
+GO
+
+DROP VIEW IF EXISTS Accounting.vwInvoiceCalendarCommercialAssetXref
+GO
+
+DROP VIEW IF EXISTS Accounting.vwInvoiceCalendarBillingCompanyXref
+GO
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+DROP INDEX Accounting.InvoiceEngineRunDetail.FX04_InvoiceEngineRunDetail;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP CONSTRAINT FK_InvoiceEngineRunDetail_InvoiceCalendarDetail;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP COLUMN InvoiceCalendarDetailId;
+GO
+
+DROP INDEX Accounting.InvoiceEngineRunDetail.FX05_InvoiceEngineRunDetail;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP CONSTRAINT FK_InvoiceEngineRunDetail_InvoiceCalendarBillingCompanyXref;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP COLUMN InvoiceCalendarBillingCompanyXrefId;
+GO
+
+DROP INDEX Accounting.InvoiceEngineRunDetail.FX03_InvoiceEngineRunDetail;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP CONSTRAINT FK_InvoiceEngineRunDetail_InvoiceCalendarCommercialAssetXref;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP COLUMN InvoiceCalendarCommercialAssetXrefId;
+GO
+
+DROP INDEX Accounting.InvoiceEngineRunDetail.FX06_InvoiceEngineRunDetail;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP CONSTRAINT FK_InvoiceEngineRunDetail_ContractInvoiceConfigurationInvoiceCalendarConfigurationXref;
+GO
+
+ALTER TABLE Accounting.InvoiceEngineRunDetail DROP COLUMN ContractInvoiceConfigurationInvoiceCalendarConfigurationXrefId;
+GO
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationInvoiceCalendarConfigurationXref DROP CONSTRAINT FK_ContractInvoiceConfigurationInvoiceCalendarConfigurationXref_InvoiceCalendarConfiguration;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationInvoiceCalendarConfigurationXref DROP CONSTRAINT FK_ContractInvoiceConfigurationInvoiceCalendarConfigurationXref_ContractInvoiceConfiguration;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationInvoiceCalendarConfigurationXref SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.ContractInvoiceConfigurationInvoiceCalendarConfigurationXref;
+GO
+
+DROP TABLE History.ContractInvoiceConfigurationInvoiceCalendarConfigurationXref;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationServiceFeeTypeXref DROP CONSTRAINT FK_ContractInvoiceConfigurationServiceFeeTypeXref_ServiceFeeType;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationServiceFeeTypeXref DROP CONSTRAINT FK_ContractInvoiceConfigurationServiceFeeTypeXref_InvoicePaymentTerm;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationServiceFeeTypeXref DROP CONSTRAINT FK_ContractInvoiceConfigurationServiceFeeTypeXref_ContractInvoiceConfiguration;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfigurationServiceFeeTypeXref SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.ContractInvoiceConfigurationServiceFeeTypeXref;
+GO
+
+DROP TABLE History.ContractInvoiceConfigurationServiceFeeTypeXref;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.ContractInvoiceConfiguration DROP CONSTRAINT FK_ContractInvoiceConfiguration_InvoicePaymentTerm;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfiguration DROP CONSTRAINT FK_ContractInvoiceConfiguration_Contract;
+GO
+
+ALTER TABLE Accounting.ContractInvoiceConfiguration SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.ContractInvoiceConfiguration;
+GO
+
+DROP TABLE History.ContractInvoiceConfiguration;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetServiceFeeTypeXref DROP CONSTRAINT FK_InvoiceCalendarCommercialAssetServiceFeeTypeXref_ServiceFeeType;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetServiceFeeTypeXref DROP CONSTRAINT FK_InvoiceCalendarCommercialAssetServiceFeeTypeXref_InvoiceCalendarCommercialAssetXref;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetServiceFeeTypeXref SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.InvoiceCalendarCommercialAssetServiceFeeTypeXref;
+GO
+
+DROP TABLE History.InvoiceCalendarCommercialAssetServiceFeeTypeXref;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.InvoiceCalendarBillingCompanyXref DROP CONSTRAINT FK_InvoiceCalendarBillingCompanyXref_InvoicePaymentTerm;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarBillingCompanyXref DROP CONSTRAINT FK_InvoiceCalendarBillingCompanyXref_InvoiceCalendarConfiguration;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarBillingCompanyXref DROP CONSTRAINT FK_InvoiceCalendarBillingCompanyXref_BusinessEntity;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarBillingCompanyXref SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.InvoiceCalendarBillingCompanyXref;
+GO
+
+DROP TABLE History.InvoiceCalendarBillingCompanyXref;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetXref DROP CONSTRAINT FK_InvoiceCalendarCommercialAssetXref_InvoicePaymentTerm;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetXref DROP CONSTRAINT FK_InvoiceCalendarCommercialAssetXref_InvoiceCalendarConfiguration;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetXref DROP CONSTRAINT FK_InvoiceCalendarCommercialAssetXref_CommercialAsset;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarCommercialAssetXref SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.InvoiceCalendarCommercialAssetXref;
+GO
+
+DROP TABLE History.InvoiceCalendarCommercialAssetXref;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.InvoiceCalendarDetail DROP CONSTRAINT FK_InvoiceCalendarDetail_InvoiceCalendarConfiguration;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarDetail SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.InvoiceCalendarDetail;
+GO
+
+DROP TABLE History.InvoiceCalendarDetail;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration DROP CONSTRAINT FK_InvoiceCalendarConfiguration_FrequencyPeriodType;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration SET(SYSTEM_VERSIONING = OFF);
+GO
+
+DROP TABLE Accounting.InvoiceCalendarConfiguration;
+GO
+
+DROP TABLE History.InvoiceCalendarConfiguration;
+GO
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CREATE TABLE MasterData.CalendarDay
+    (CalendarDayId            SMALLINT NOT NULL
+    ,Code                     VARCHAR(30) NOT NULL
+    ,Description              VARCHAR(100) NOT NULL
+    ,CreatedBy                VARCHAR(100) CONSTRAINT DF_CalendarDay_CreatedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,CreationDateTime         DATETIME2(7) CONSTRAINT DF_CalendarDay_CreationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,LastModifiedBy           VARCHAR(100) CONSTRAINT DF_CalendarDay_LastModifiedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,LastModificationDateTime DATETIME2(7) CONSTRAINT DF_CalendarDay_LastModificationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,CONSTRAINT PK_CalendarDay PRIMARY KEY CLUSTERED(CalendarDayId)
+    );
+GO
+
+CREATE UNIQUE INDEX AK_CalendarDay
+ON MasterData.CalendarDay
+    (Code
+    );
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that created the record.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'MasterData'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'CalendarDay'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreatedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was inserted.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'MasterData'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'CalendarDay'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that modified the record. When a record is inserted, the LastModifiedBy will be the same as CreatedBy.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'MasterData'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'CalendarDay'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModifiedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was last modified. When a record is inserted, the LastModificationDateTime will be the same as CreationDateTime.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'MasterData'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'CalendarDay'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModificationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'Type of Calendar Day e.g. Sunday, Monday.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'MasterData'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'CalendarDay';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_TableTier'
+                               ,@value = N'Tier 1'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'MasterData'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'CalendarDay';
+GO
+
+EXEC History.uspConfigureSystemVersioning @pSchema = 'MasterData'
+                                         ,@pTable = 'CalendarDay';
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+DECLARE @lCreatedBy VARCHAR(100) = 'SeedData:Mustang';
+
+DECLARE @lCreatedDate DATETIME2(7) = '2022-02-24 00:25:00.9387232';
+
+INSERT INTO MasterData.CalendarDay(CalendarDayId
+                                  ,Code
+                                  ,Description
+                                  ,CreatedBy
+                                  ,CreationDateTime
+                                  )
+VALUES(1
+      ,'Sunday'
+      ,'Sunday'
+      ,@lCreatedBy
+      ,@lCreatedDate
+       ),(2
+         ,'Monday'
+         ,'Monday'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(3
+         ,'Tuesday'
+         ,'Tuesday'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(4
+         ,'Wednesday'
+         ,'Wednesday'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(5
+         ,'Thursday'
+         ,'Thursday'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(6
+         ,'Friday'
+         ,'Friday'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(7
+         ,'Saturday'
+         ,'Saturday'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       );
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CREATE TABLE Accounting.InvoiceFrequencyPeriodType
+    (InvoiceFrequencyPeriodTypeId SMALLINT NOT NULL
+    ,Code                         VARCHAR(30) NOT NULL
+    ,Description                  VARCHAR(100) NOT NULL
+    ,CreatedBy                    VARCHAR(100) CONSTRAINT DF_InvoiceFrequencyPeriodType_CreatedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,CreationDateTime             DATETIME2(7) CONSTRAINT DF_InvoiceFrequencyPeriodType_CreationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,LastModifiedBy               VARCHAR(100) CONSTRAINT DF_InvoiceFrequencyPeriodType_LastModifiedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,LastModificationDateTime     DATETIME2(7) CONSTRAINT DF_InvoiceFrequencyPeriodType_LastModificationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,CONSTRAINT PK_InvoiceFrequencyPeriodType PRIMARY KEY CLUSTERED(InvoiceFrequencyPeriodTypeId)
+    );
+
+CREATE UNIQUE INDEX AK_InvoiceFrequencyPeriodType
+ON Accounting.InvoiceFrequencyPeriodType
+    (Code
+    );
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that created the record.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceFrequencyPeriodType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreatedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was inserted.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceFrequencyPeriodType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that modified the record. When a record is inserted, the LastModifiedBy will be the same as CreatedBy.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceFrequencyPeriodType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModifiedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was last modified. When a record is inserted, the LastModificationDateTime will be the same as CreationDateTime.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceFrequencyPeriodType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModificationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'Type of Frequency Period e.g. Weekly, Monthly, Annual etc.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceFrequencyPeriodType';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_TableTier'
+                               ,@value = N'Tier 1'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceFrequencyPeriodType';
+GO
+
+EXEC history.uspConfigureSystemVersioning @pSchema = 'Accounting'
+                                         ,@pTable = 'InvoiceFrequencyPeriodType';
+GO
+
+DECLARE @lCreatedBy VARCHAR(100) = 'SeedData:Mustang';
+
+DECLARE @lCreatedDate DATETIME2(7) = '2022-02-24 00:25:00.9387232';
+
+INSERT INTO Accounting.InvoiceFrequencyPeriodType(InvoiceFrequencyPeriodTypeId
+                                                 ,Code
+                                                 ,Description
+                                                 ,CreatedBy
+                                                 ,CreationDateTime
+                                                 )
+VALUES(1
+      ,N'Year'
+      ,N'Yearly'
+      ,@lCreatedBy
+      ,@lCreatedDate
+       ),(2
+         ,N'Month'
+         ,N'Monthly'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(3
+         ,N'Quarter'
+         ,N'Quarterly'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(4
+         ,N'Weekly'
+         ,N'Weekly'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(5
+         ,N'TwiceAMonth'
+         ,N'Twice A Month'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(6
+         ,N'NoCalendar'
+         ,N'No Calendar'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       );
+
+GO
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CREATE TABLE Accounting.InvoiceCalendarConfiguration
+    (InvoiceCalendarConfigurationId      BIGINT NOT NULL IDENTITY(1000000,1)
+    ,InvoiceFrequencyPeriodTypeId SMALLINT NOT NULL
+    ,Name                         VARCHAR(100)
+    ,CalendarDayId                SMALLINT NULL
+    ,CalendarMonthId              SMALLINT NULL
+    ,CalendarDateDay              SMALLINT NULL
+    ,CreatedBy                    VARCHAR(100) CONSTRAINT DF_InvoiceCalendarConfiguration_CreatedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,CreationDateTime             DATETIME2(7) CONSTRAINT DF_InvoiceCalendarConfiguration_CreationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,LastModifiedBy               VARCHAR(100) CONSTRAINT DF_InvoiceCalendarConfiguration_LastModifiedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,LastModificationDateTime     DATETIME2(7) CONSTRAINT DF_InvoiceCalendarConfiguration_LastModificationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,CONSTRAINT PK_InvoiceCalendarConfiguration PRIMARY KEY CLUSTERED(InvoiceCalendarConfigurationId)
+    );
+GO
+
+CREATE UNIQUE INDEX AK_InvoiceCalendarConfiguration
+ON Accounting.InvoiceCalendarConfiguration
+    (InvoiceFrequencyPeriodTypeId,CalendarDayId,CalendarMonthId,CalendarDateDay
+    );
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarConfiguration_InvoiceFrequencyPeriodType FOREIGN KEY(InvoiceFrequencyPeriodTypeId) REFERENCES Accounting.InvoiceFrequencyPeriodType(InvoiceFrequencyPeriodTypeId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration CHECK CONSTRAINT FK_InvoiceCalendarConfiguration_InvoiceFrequencyPeriodType;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarConfiguration_CalendarDay FOREIGN KEY(CalendarDayId) REFERENCES MasterData.CalendarDay(CalendarDayId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration CHECK CONSTRAINT FK_InvoiceCalendarConfiguration_CalendarDay;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarConfiguration_CalendarMonth FOREIGN KEY(CalendarMonthId) REFERENCES MasterData.CalendarMonth(CalendarMonthId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarConfiguration CHECK CONSTRAINT FK_InvoiceCalendarConfiguration_CalendarMonth;
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that created the record.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarConfiguration'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreatedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was inserted.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarConfiguration'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that modified the record. When a record is inserted, the LastModifiedBy will be the same as CreatedBy.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarConfiguration'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModifiedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was last modified. When a record is inserted, the LastModificationDateTime will be the same as CreationDateTime.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarConfiguration'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModificationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_TableTier'
+                               ,@value = N'Tier 2'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarConfiguration';
+GO
+
+EXEC history.uspConfigureSystemVersioning @pSchema = 'Accounting'
+                                         ,@pTable = 'InvoiceCalendarConfiguration';
+GO
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CREATE TABLE Accounting.InvoiceCalendarSchedule
+    (InvoiceCalendarScheduleId      BIGINT NOT NULL IDENTITY(1000000,1)
+    ,InvoiceCalendarConfigurationId        BIGINT NOT NULL
+    ,BillingPeriodStartDate         DATETIME2(7) NOT NULL
+    ,BillingPeriodEndDate           DATETIME2(7) NOT NULL
+    ,InvoicingDate                  DATETIME2(7) NULL
+    ,OriginalBillingPeriodStartDate DATETIME2(7) NULL
+    ,OriginalBillingPeriodEndDate   DATETIME2(7) NULL
+    ,OriginalInvoicingDate          DATETIME2(7) NULL
+    ,ApplicationUserId              BIGINT NULL
+    ,InvoiceEngineRunStatusId       SMALLINT NULL
+    ,IsUserDefined                  BIT NULL
+    ,CreatedBy                      VARCHAR(100) CONSTRAINT DF_InvoiceCalendarSchedule_CreatedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,CreationDateTime               DATETIME2(7) CONSTRAINT DF_InvoiceCalendarSchedule_CreationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,LastModifiedBy                 VARCHAR(100) CONSTRAINT DF_InvoiceCalendarSchedule_LastModifiedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,LastModificationDateTime       DATETIME2(7) CONSTRAINT DF_InvoiceCalendarSchedule_LastModificationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,CONSTRAINT PK_InvoiceCalendarSchedule PRIMARY KEY CLUSTERED(InvoiceCalendarScheduleId)
+    );
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarSchedule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarSchedule_InvoiceCalendarConfiguration FOREIGN KEY(InvoiceCalendarConfigurationId) REFERENCES Accounting.InvoiceCalendarConfiguration(InvoiceCalendarConfigurationId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarSchedule CHECK CONSTRAINT FK_InvoiceCalendarSchedule_InvoiceCalendarConfiguration;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarSchedule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarSchedule_ApplicationUser FOREIGN KEY(ApplicationUserId) REFERENCES Framework.ApplicationUser(ApplicationUserId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarSchedule CHECK CONSTRAINT FK_InvoiceCalendarSchedule_ApplicationUser;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarSchedule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarSchedule_InvoiceEngineRunStatus FOREIGN KEY(InvoiceEngineRunStatusId) REFERENCES Accounting.InvoiceEngineRunStatus(InvoiceEngineRunStatusId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarSchedule CHECK CONSTRAINT FK_InvoiceCalendarSchedule_InvoiceEngineRunStatus;
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that created the record.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarSchedule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreatedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was inserted.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarSchedule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that modified the record. When a record is inserted, the LastModifiedBy will be the same as CreatedBy.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarSchedule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModifiedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was last modified. When a record is inserted, the LastModificationDateTime will be the same as CreationDateTime.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarSchedule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModificationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_TableTier'
+                               ,@value = N'Tier 3'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarSchedule';
+GO
+
+EXEC history.uspConfigureSystemVersioning @pSchema = 'Accounting'
+                                         ,@pTable = 'InvoiceCalendarSchedule';
+GO
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CREATE TABLE Accounting.InvoiceCalendarAssociationRule
+    (InvoiceCalendarAssociationRuleId BIGINT NOT NULL IDENTITY(1000000,1)
+    ,InvoiceCalendarConfigurationId          BIGINT NOT NULL
+    ,EffectiveStartDate               DATETIME2(7) NOT NULL
+    ,EffectiveEndDate                 DATETIME2(7) NULL
+    ,AssetGroupId                     BIGINT NULL
+    ,CommercialAssetId                BIGINT NULL
+    ,BusinessEntityId                 BIGINT NULL
+    ,ServiceFeeTypeId                 BIGINT NULL
+    ,ContractId                       BIGINT NULL
+    ,PaymentTermId                    SMALLINT NOT NULL
+    ,AssociationTypeId                SMALLINT NOT NULL
+    ,IsPriorPeriodAdjustmentOverride  BIT NULL
+    ,IsAllBusinessEntitySelected      BIT NULL
+    ,IsAllContractSelected            BIT NULL
+    ,IsAllServiceFeeSelected          BIT NULL
+    ,FeeTemplateTypeId                SMALLINT NULL
+    ,ServiceOrderTypeId               SMALLINT NULL
+    ,IsSystemDefined                  BIT CONSTRAINT DF_InvoiceCalendarAssociationRule_IsSystemDefined DEFAULT 0 NOT NULL
+    ,BillingRecordTypeId              SMALLINT NULL
+    ,CreatedBy                        VARCHAR(100) CONSTRAINT DF_InvoiceCalendarAssociationRule_CreatedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,CreationDateTime                 DATETIME2(7) CONSTRAINT DF_InvoiceCalendarAssociationRule_CreationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,LastModifiedBy                   VARCHAR(100) CONSTRAINT DF_InvoiceCalendarAssociationRule_LastModifiedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,LastModificationDateTime         DATETIME2(7) CONSTRAINT DF_InvoiceCalendarAssociationRule_LastModificationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,CONSTRAINT PK_InvoiceCalendarAssociationRule PRIMARY KEY CLUSTERED(InvoiceCalendarAssociationRuleId)
+    );
+GO
+
+CREATE UNIQUE INDEX AK_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (InvoiceCalendarConfigurationId,EffectiveStartDate,EffectiveEndDate,AssetGroupId,IsPriorPeriodAdjustmentOverride,CommercialAssetId,BusinessEntityId,ServiceFeeTypeId,ContractId,PaymentTermId,FeeTemplateTypeId,BillingRecordTypeId,AssociationTypeId
+    );
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_InvoiceCalendarConfiguration FOREIGN KEY(InvoiceCalendarConfigurationId) REFERENCES Accounting.InvoiceCalendarConfiguration(InvoiceCalendarConfigurationId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_InvoiceCalendarConfiguration;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_CommercialAsset FOREIGN KEY(CommercialAssetId) REFERENCES MasterData.CommercialAsset(CommercialAssetId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_CommercialAsset;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_BusinessEntity FOREIGN KEY(BusinessEntityId) REFERENCES MasterData.BusinessEntity(BusinessEntityId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_BusinessEntity;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_ServiceFeeType FOREIGN KEY(ServiceFeeTypeId) REFERENCES Accounting.ServiceFeeType(ServiceFeeTypeId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_ServiceFeeType;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_Contract FOREIGN KEY(ContractId) REFERENCES Accounting.Contract(ContractId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_Contract;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_InvoicePaymentTerm FOREIGN KEY(PaymentTermId) REFERENCES Accounting.InvoicePaymentTerm(InvoicePaymentTermId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_InvoicePaymentTerm;
+GO
+----Added later
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_FeeTemplateType FOREIGN KEY(FeeTemplateTypeId) REFERENCES Accounting.FeeTemplateType(FeeTemplateTypeId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_FeeTemplateType;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_ServiceOrderType FOREIGN KEY(ServiceOrderTypeId) REFERENCES Accounting.ServiceOrderType(ServiceOrderTypeId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_ServiceOrderType;
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_BillingRecordType FOREIGN KEY(BillingRecordTypeId) REFERENCES Accounting.BillingRecordType(BillingRecordTypeId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_BillingRecordType;
+GO
+----------------
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that created the record.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarAssociationRule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreatedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was inserted.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarAssociationRule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that modified the record. When a record is inserted, the LastModifiedBy will be the same as CreatedBy.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarAssociationRule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModifiedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was last modified. When a record is inserted, the LastModificationDateTime will be the same as CreationDateTime.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarAssociationRule'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModificationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_TableTier'
+                               ,@value = N'Tier 3'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceCalendarAssociationRule';
+GO
+
+EXEC history.uspConfigureSystemVersioning @pSchema = 'Accounting'
+                                         ,@pTable = 'InvoiceCalendarAssociationRule';
+GO
+
+DECLARE @lLastModifiedBy VARCHAR(100) = 'SeedData:Mustang';
+
+DECLARE @lLastModificationDateTime DATETIME2(7) = '2022-02-24 00:25:00.9387232';
+
+INSERT INTO Accounting.InvoiceEngineRunStatus(InvoiceEngineRunStatusId
+                                             ,Code
+                                             ,Description
+                                             ,LastModifiedBy
+                                             ,LastModificationDateTime
+                                             )
+VALUES(3
+      ,N'New'
+      ,N'New'
+      ,@lLastModifiedBy
+      ,@lLastModificationDateTime
+       ),(4
+         ,N'Pending'
+         ,N'Pending'
+         ,@lLastModifiedBy
+         ,@lLastModificationDateTime
+       ),(5
+         ,N'Scheduled'
+         ,N'Scheduled'
+         ,@lLastModifiedBy
+         ,@lLastModificationDateTime
+       );
+
+Go
+
+CREATE TABLE Accounting.InvoiceAssociationType
+    (InvoiceAssociationTypeId SMALLINT NOT NULL
+    ,Code                     VARCHAR(30) NOT NULL
+    ,Description              VARCHAR(100) NOT NULL
+    ,CreatedBy                VARCHAR(100) CONSTRAINT DF_InvoiceAssociationType_CreatedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,CreationDateTime         DATETIME2(7) CONSTRAINT DF_InvoiceAssociationType_CreationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,LastModifiedBy           VARCHAR(100) CONSTRAINT DF_InvoiceAssociationType_LastModifiedBy DEFAULT Framework.ufnGetUserContext() NOT NULL
+    ,LastModificationDateTime DATETIME2(7) CONSTRAINT DF_InvoiceAssociationType_LastModificationDateTime DEFAULT SYSDATETIME() NOT NULL
+    ,CONSTRAINT PK_InvoiceAssociationType PRIMARY KEY CLUSTERED(InvoiceAssociationTypeId)
+    );
+GO
+
+CREATE UNIQUE INDEX AK_InvoiceAssociationType
+ON Accounting.InvoiceAssociationType
+    (Code
+    );
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that created the record.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceAssociationType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreatedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was inserted.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceAssociationType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'CreationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The user id that modified the record. When a record is inserted, the LastModifiedBy will be the same as CreatedBy.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceAssociationType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModifiedBy';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'The date and time when the record was last modified. When a record is inserted, the LastModificationDateTime will be the same as CreationDateTime.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceAssociationType'
+                               ,@level2type = N'COLUMN'
+                               ,@level2name = N'LastModificationDateTime';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_Description'
+                               ,@value = N'Type of Association.'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceAssociationType';
+GO
+
+EXEC sys.sp_addextendedproperty @name = N'MS_TableTier'
+                               ,@value = N'Tier 1'
+                               ,@level0type = N'SCHEMA'
+                               ,@level0name = N'Accounting'
+                               ,@level1type = N'TABLE'
+                               ,@level1name = N'InvoiceAssociationType';
+GO
+
+EXEC History.uspConfigureSystemVersioning @pSchema = 'Accounting'
+                                         ,@pTable = 'InvoiceAssociationType';
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+DECLARE @lCreatedBy VARCHAR(100) = 'SeedData:Mustang';
+
+DECLARE @lCreatedDate DATETIME2(7) = '2022-02-24 00:25:00.9387232';
+
+INSERT INTO Accounting.InvoiceAssociationType(InvoiceAssociationTypeId
+                                             ,Code
+                                             ,Description
+                                             ,CreatedBy
+                                             ,CreationDateTime
+                                             )
+VALUES(1
+      ,'Default'
+      ,'Default'
+      ,@lCreatedBy
+      ,@lCreatedDate
+       ),(2
+         ,'CalendarOverride'
+         ,'Calendar Override'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       ),(3
+         ,'NoCalendarOverrides'
+         ,'Non Calendar-Overrides'
+         ,@lCreatedBy
+         ,@lCreatedDate
+       );
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule
+WITH CHECK
+ADD CONSTRAINT FK_InvoiceCalendarAssociationRule_InvoiceAssociationType FOREIGN KEY(AssociationTypeId) REFERENCES Accounting.InvoiceAssociationType(InvoiceAssociationTypeId);
+GO
+
+ALTER TABLE Accounting.InvoiceCalendarAssociationRule CHECK CONSTRAINT FK_InvoiceCalendarAssociationRule_InvoiceAssociationType;
+GO
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CREATE INDEX FX01_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (CommercialAssetId
+    );
+Go
+
+CREATE INDEX FX02_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (BusinessEntityId
+    );
+Go
+
+CREATE INDEX FX03_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (ServiceFeeTypeId
+    );
+Go
+
+CREATE INDEX FX04_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (ContractId
+    );
+Go
+
+CREATE INDEX FX05_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (PaymentTermId
+    );
+Go
+
+CREATE INDEX FX06_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (FeeTemplateTypeId
+    );
+Go
+
+CREATE INDEX FX07_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (ServiceOrderTypeId
+    );
+Go
+
+CREATE INDEX FX08_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (BillingRecordTypeId
+    );
+GO
+
+CREATE INDEX FX09_InvoiceCalendarAssociationRule
+ON Accounting.InvoiceCalendarAssociationRule
+    (AssociationTypeId
+    );
+
+CREATE INDEX FX01_InvoiceCalendarConfiguration
+ON Accounting.InvoiceCalendarConfiguration
+    (CalendarDayId
+    );
+Go
+
+CREATE INDEX FX02_InvoiceCalendarConfiguration
+ON Accounting.InvoiceCalendarConfiguration
+    (CalendarMonthId
+    );
+Go
+
+CREATE INDEX FX01_InvoiceCalendarSchedule
+ON Accounting.InvoiceCalendarSchedule
+    (InvoiceCalendarConfigurationId
+    );
+Go
+
+CREATE INDEX FX02_InvoiceCalendarSchedule
+ON Accounting.InvoiceCalendarSchedule
+    (ApplicationUserId
+    );
+Go
+
+CREATE INDEX FX03_InvoiceCalendarSchedule
+ON Accounting.InvoiceCalendarSchedule
+    (InvoiceEngineRunStatusId
+    );

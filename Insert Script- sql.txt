@@ -1,0 +1,1382 @@
+/*************************************************************************************************
+*
+*  © Copyright 2012 - 2020, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+*  Permission to use, copy, modify, or distribute this software source code, binaries or 
+*  related documentation, is strictly prohibited, without written consent from Enterprise.
+*  For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+*  Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+*
+*  Author: Prajapati,Ajay
+*  Creation Date: 12/15/2021
+*  Summary: Integration test seed data for invoice calendar
+*  Bug #274035
+**************************************************************************************************/
+
+SET IDENTITY_INSERT Accounting.InvoiceCalendarConfiguration ON;
+GO
+
+DECLARE @lCreatedBy VARCHAR(100) = 'SeedData:Feature274035';
+
+DECLARE @lCreationDateTime DATETIME2(7) = '2022-05-24 16:46:32.140';
+
+INSERT INTO Accounting.InvoiceCalendarConfiguration(InvoiceCalendarConfigurationId
+                                                   ,InvoiceFrequencyPeriodTypeId
+                                                   ,Name
+                                                   ,CalendarDayId
+                                                   ,CalendarMonthId
+                                                   ,CalendarDateDay
+                                                   ,CreatedBy
+                                                   ,CreationDateTime
+                                                   )
+VALUES(9000000001
+      ,4
+      ,N'Sunday'
+      ,1
+      ,NULL
+      ,NULL
+      ,@lCreatedBy
+      ,@lCreationDateTime
+       ),(9000000002
+         ,2
+         ,N'Monthly'
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       ),(9000000003
+         ,4
+         ,N'Wednesday'
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       );
+GO
+
+SET IDENTITY_INSERT Accounting.InvoiceCalendarConfiguration OFF;
+GO
+
+SET IDENTITY_INSERT Accounting.InvoiceCalendarAssociationRule ON;
+GO
+
+DECLARE @lCreatedBy VARCHAR(100) = 'SeedData:Feature274035';
+
+DECLARE @lCreationDateTime DATETIME2(7) = '2022-05-24 16:46:32.140';
+
+DECLARE @lMaxInvoiceCalendarAssociationRuleId BIGINT = (SELECT ISNULL(MAX(InvoiceCalendarAssociationRule.InvoiceCalendarAssociationRuleId),9000000000)
+                                                          FROM Accounting.InvoiceCalendarAssociationRule
+);
+
+DECLARE @lMaxInvoiceCalendarConfigurationId BIGINT = (SELECT ISNULL(MAX(InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId),9000000000)
+                                                        FROM Accounting.InvoiceCalendarConfiguration
+);
+
+DECLARE @lWeeklyInvoiceCalendarConfigurationId BIGINT = (SELECT TOP 1 InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId
+                                                           FROM Accounting.InvoiceCalendarConfiguration
+                                                                INNER JOIN Accounting.InvoiceFrequencyPeriodType
+                                                                        ON InvoiceFrequencyPeriodType.InvoiceFrequencyPeriodTypeId = InvoiceCalendarConfiguration.InvoiceFrequencyPeriodTypeId
+                                                          WHERE InvoiceFrequencyPeriodType.Code = 'Weekly'
+                                                                AND InvoiceCalendarConfiguration.Name = 'Wednesday'
+);
+
+INSERT INTO Accounting.InvoiceCalendarAssociationRule(InvoiceCalendarAssociationRuleId
+                                                     ,InvoiceCalendarConfigurationId
+                                                     ,EffectiveStartDate
+                                                     ,EffectiveEndDate
+                                                     ,AssetGroupId
+                                                     ,CommercialAssetId
+                                                     ,BusinessEntityId
+                                                     ,ServiceFeeTypeId
+                                                     ,ContractId
+                                                     ,PaymentTermId
+                                                     ,AssociationTypeId
+                                                     ,IsPriorPeriodAdjustmentOverride
+                                                     ,IsAllBusinessEntitySelected
+                                                     ,IsAllContractSelected
+                                                     ,FeeTemplateTypeId
+                                                     ,ServiceOrderTypeId
+                                                     ,IsSystemDefined
+                                                     ,BillingRecordTypeId
+                                                     ,CreatedBy
+                                                     ,CreationDateTime
+                                                     )
+VALUES(@lMaxInvoiceCalendarAssociationRuleId + 1
+      ,@lWeeklyInvoiceCalendarConfigurationId
+      ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+      ,NULL
+      ,9000000008
+      ,9000000014
+      ,NULL
+      ,NULL
+      ,NULL
+      ,1
+      ,1
+      ,NULL
+      ,1
+      ,1
+      ,NULL
+      ,NULL
+      ,0
+      ,NULL
+      ,@lCreatedBy
+      ,@lCreationDateTime
+       ),(@lMaxInvoiceCalendarAssociationRuleId + 2
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-04-15T00:00:00.0000000' AS DATETIME2)
+         ,9000000008
+         ,9000000014
+         ,9000000006
+         ,9000000035
+         ,9119251214
+         ,1
+         ,2
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,0
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       ),(@lMaxInvoiceCalendarAssociationRuleId + 3
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,9000000001
+         ,9000000001
+         ,NULL
+         ,NULL
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,NULL
+         ,0
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       ),(@lMaxInvoiceCalendarAssociationRuleId + 4
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,9000000001
+         ,9000000003
+         ,NULL
+         ,NULL
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,NULL
+         ,0
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       ),(@lMaxInvoiceCalendarAssociationRuleId + 5
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,1
+         ,2
+         ,NULL
+         ,NULL
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,NULL
+         ,0
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       ),(@lMaxInvoiceCalendarAssociationRuleId + 6
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,9000000007
+         ,9000000013
+         ,NULL
+         ,NULL
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,NULL
+         ,0
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       ),(@lMaxInvoiceCalendarAssociationRuleId + 7
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,9000000008
+         ,9000000016
+         ,NULL
+         ,NULL
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,1
+         ,1
+         ,NULL
+         ,NULL
+         ,0
+         ,NULL
+         ,@lCreatedBy
+         ,@lCreationDateTime
+       );
+GO
+
+SET IDENTITY_INSERT Accounting.InvoiceCalendarAssociationRule OFF;
+GO
+
+SET IDENTITY_INSERT Accounting.InvoiceCalendarSchedule ON;
+GO
+
+DECLARE @lCreatedBy VARCHAR(100) = N'SeedData:Feature274035';
+
+DECLARE @lCreationDateTime DATETIME2(7) = N'2022-05-25 21:45:32.140';
+
+DECLARE @lMaxInvoiceCalendarScheduleId BIGINT = (SELECT ISNULL(MAX(InvoiceCalendarSchedule.InvoiceCalendarScheduleId),9000000000)
+                                                   FROM Accounting.InvoiceCalendarSchedule
+);
+
+DECLARE @lWeeklyInvoiceCalendarConfigurationId BIGINT = (SELECT TOP 1 InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId
+                                                           FROM Accounting.InvoiceCalendarConfiguration
+                                                                INNER JOIN Accounting.InvoiceFrequencyPeriodType
+                                                                        ON InvoiceFrequencyPeriodType.InvoiceFrequencyPeriodTypeId = InvoiceCalendarConfiguration.InvoiceFrequencyPeriodTypeId
+                                                          WHERE InvoiceFrequencyPeriodType.Code = 'Weekly'
+                                                                AND InvoiceCalendarConfiguration.Name = 'Wednesday'
+);
+---- Insert Monthly Schedule
+
+INSERT INTO Accounting.InvoiceCalendarSchedule(InvoiceCalendarScheduleId
+                                              ,InvoiceCalendarConfigurationId
+                                              ,BillingPeriodStartDate
+                                              ,BillingPeriodEndDate
+                                              ,InvoicingDate
+                                              ,OriginalBillingPeriodStartDate
+                                              ,OriginalBillingPeriodEndDate
+                                              ,OriginalInvoicingDate
+                                              ,ApplicationUserId
+                                              ,InvoiceEngineRunStatusId
+                                              ,CreatedBy
+                                              ,CreationDateTime
+                                              )
+VALUES(@lMaxInvoiceCalendarScheduleId + 1
+      ,9000000002
+      ,CAST(N'2014-07-01T00:00:00.0000000' AS DATETIME2)
+      ,CAST(N'2014-07-31T00:00:00.0000000' AS DATETIME2)
+      ,NULL
+      ,NULL
+      ,NULL
+      ,NULL
+      ,NULL
+      ,NULL
+      ,@lCreatedBy
+      ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 2
+         ,9000000002
+         ,CAST(N'2014-08-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 3
+         ,9000000002
+         ,CAST(N'2014-09-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 4
+         ,9000000002
+         ,CAST(N'2014-10-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 5
+         ,9000000002
+         ,CAST(N'2014-11-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 6
+         ,9000000002
+         ,CAST(N'2014-12-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 7
+         ,9000000002
+         ,CAST(N'2015-01-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 8
+         ,9000000002
+         ,CAST(N'2015-02-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-28T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 9
+         ,9000000002
+         ,CAST(N'2015-03-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 10
+         ,9000000002
+         ,CAST(N'2015-04-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 11
+         ,9000000002
+         ,CAST(N'2015-05-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 12
+         ,9000000002
+         ,CAST(N'2015-06-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 13
+         ,9000000002
+         ,CAST(N'2015-07-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-07-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 14
+         ,9000000002
+         ,CAST(N'2015-08-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-08-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 15
+         ,9000000002
+         ,CAST(N'2015-09-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-09-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       );
+
+---- Insert Monthly Schedule
+
+INSERT INTO [Accounting].[InvoiceCalendarSchedule]([InvoiceCalendarScheduleId]
+                                                  ,[InvoiceCalendarConfigurationId]
+                                                  ,[BillingPeriodStartDate]
+                                                  ,[BillingPeriodEndDate]
+                                                  ,[InvoicingDate]
+                                                  ,[OriginalBillingPeriodStartDate]
+                                                  ,[OriginalBillingPeriodEndDate]
+                                                  ,[OriginalInvoicingDate]
+                                                  ,[ApplicationUserId]
+                                                  ,[InvoiceEngineRunStatusId]
+                                                  ,[IsUserDefined]
+                                                  ,[CreatedBy]
+                                                  ,[CreationDateTime]
+                                                  )
+VALUES(@lMaxInvoiceCalendarScheduleId + 16
+      ,@lWeeklyInvoiceCalendarConfigurationId
+      ,CAST(N'2014-04-01T00:00:00.0000000' AS DATETIME2)
+      ,CAST(N'2014-04-08T00:00:00.0000000' AS DATETIME2)
+      ,CAST(N'2014-04-09T00:00:00.0000000' AS DATETIME2)
+      ,NULL
+      ,NULL
+      ,NULL
+      ,NULL
+      ,NULL
+      ,NULL
+      ,@lCreatedBy
+      ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 17
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-09T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-04-15T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-04-16T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 18
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-16T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-04-22T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-04-23T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 19
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-04-23T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-04-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 20
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-05-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-06T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-07T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 21
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-05-07T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-13T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-14T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 22
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-05-14T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-20T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-21T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 23
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-05-21T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-27T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-28T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 24
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-05-28T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-05-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 25
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-06-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-03T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-04T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 26
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-06-04T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-11T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 27
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-06-11T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-17T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-18T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 28
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-06-18T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-24T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-25T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 29
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-06-25T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-06-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 30
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-07-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-08T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-09T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 31
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-07-09T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-15T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-16T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 32
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-07-16T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-22T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-23T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 33
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-07-23T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-07-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 34
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-08-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-05T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-06T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 35
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-08-06T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-12T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-13T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 36
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-08-13T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-19T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-20T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 37
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-08-20T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-26T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-27T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 38
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-08-27T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-08-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 39
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-09-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-09T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-10T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 40
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-09-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-16T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-17T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 41
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-09-17T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-23T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-24T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 42
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-09-24T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-09-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 43
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-10-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-07T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-08T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 44
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-10-08T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-14T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-15T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 45
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-10-15T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-21T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-22T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 46
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-10-22T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-28T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-29T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 47
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-10-29T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-10-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 48
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-11-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-04T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-05T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 49
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-11-05T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-11T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-12T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 50
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-11-12T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-18T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-19T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 51
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-11-19T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-25T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-26T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 52
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-11-26T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-11-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 53
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-12-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-09T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-10T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 54
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-12-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-16T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-17T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 55
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-12-17T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-23T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-24T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 56
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2014-12-24T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2014-12-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 57
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-01-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-06T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-07T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 58
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-01-07T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-13T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-14T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 59
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-01-14T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-20T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-21T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 60
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-01-21T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-27T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-28T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 61
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-01-28T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-01-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 62
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-02-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-03T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-04T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 63
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-02-04T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-11T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 64
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-02-11T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-17T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-18T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 65
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-02-18T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-24T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-25T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 66
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-02-25T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-02-28T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 67
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-03-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-03T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-04T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 68
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-03-04T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-11T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 69
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-03-11T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-17T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-18T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 70
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-03-18T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-24T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-25T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 71
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-03-25T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-03-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 72
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-04-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-07T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-08T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 73
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-04-08T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-14T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-15T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 74
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-04-15T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-21T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-22T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 75
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-04-22T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-04-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 76
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-05-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-05T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-06T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 77
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-05-06T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-12T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-13T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 78
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-05-13T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-19T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-20T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 79
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-05-20T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-26T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-27T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 80
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-05-27T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-05-31T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 81
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-06-01T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-09T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-10T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 82
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-06-10T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-16T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-17T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 83
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-06-17T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-23T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-24T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       ),(@lMaxInvoiceCalendarScheduleId + 84
+         ,@lWeeklyInvoiceCalendarConfigurationId
+         ,CAST(N'2015-06-24T00:00:00.0000000' AS DATETIME2)
+         ,CAST(N'2015-06-30T00:00:00.0000000' AS DATETIME2)
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,NULL
+         ,@lCreatedBy
+         ,CAST(@lCreationDateTime AS DATETIME2)
+       );
+
+SET IDENTITY_INSERT Accounting.InvoiceCalendarSchedule OFF;
+GO

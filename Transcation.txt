@@ -1,0 +1,222 @@
+-- ************************************************************************************************
+--
+-- © Copyright 2012 - 2020, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+-- Permission to use, copy, modify, or distribute this software source code, binaries or
+-- related documentation, is strictly prohibited, without written consent from Enterprise.
+-- For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+-- Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+--
+-- Author: Prem Keshari
+-- Feature #: 274035
+-- ************************************************************************************************
+
+BEGIN TRY
+    BEGIN TRAN;
+
+    DECLARE @lCreatedBy NVARCHAR(100) = N'SeedData:Feature274035';
+    DECLARE @lCreatedDate DATETIME2(7) = GETUTCDATE();
+    DECLARE @lIsSystemDefined BIT = 1;
+    DECLARE @lIsPriorPeriodAdjustmentOverride BIT = NULL;
+    DECLARE @lIsAllBusinessEntitySelected BIT = 1;
+    DECLARE @lIsAllContractSelected BIT = 1;
+    DECLARE @lIsAllServiceFeeSelected BIT = 1;
+    DECLARE @lEffectiveStartDate DATETIME2(7) = '2014-04-01 00:00:00.0000000';
+    DECLARE @lEffectiveEndDate DATETIME2(7) = NULL;
+
+    DECLARE @lNoCalendarInvoiceFrequencyPeriodTypeId SMALLINT = (SELECT TOP 1 InvoiceFrequencyPeriodType.InvoiceFrequencyPeriodTypeId
+                                                                   FROM Accounting.InvoiceFrequencyPeriodType
+                                                                  WHERE InvoiceFrequencyPeriodType.Code = 'NoCalendar'
+    );
+
+    DECLARE @lDailyInvoiceCalendarConfigurationId BIGINT = (SELECT TOP 1 InvoiceCalendarConfiguration.InvoiceCalendarConfigurationId
+                                                              FROM Accounting.InvoiceCalendarConfiguration
+                                                             WHERE InvoiceCalendarConfiguration.InvoiceFrequencyPeriodTypeId = @lNoCalendarInvoiceFrequencyPeriodTypeId
+    );
+
+    DECLARE @lTimeBasedFeeTemaplate SMALLINT = (SELECT TOP 1 FeeTemplateType.FeeTemplateTypeId
+                                                  FROM Accounting.FeeTemplateType
+                                                 WHERE FeeTemplateType.Code = 'TimeBased'
+    );
+
+    DECLARE @lDeficiencyFeeTemaplate SMALLINT = (SELECT TOP 1 FeeTemplateType.FeeTemplateTypeId
+                                                   FROM Accounting.FeeTemplateType
+                                                  WHERE FeeTemplateType.Code = 'Deficiency'
+    );
+
+    DECLARE @lEventFeeTemaplate SMALLINT = (SELECT TOP 1 FeeTemplateType.FeeTemplateTypeId
+                                              FROM Accounting.FeeTemplateType
+                                             WHERE FeeTemplateType.Code = 'Event'
+    );
+
+    DECLARE @lImmediateInvoicePaymentTermId SMALLINT = (SELECT InvoicePaymentTerm.InvoicePaymentTermId
+                                                          FROM Accounting.InvoicePaymentTerm
+                                                         WHERE InvoicePaymentTerm.Code = 'Immediate'
+    );
+    DECLARE @lNet30InvoicePaymentTermId SMALLINT = (SELECT InvoicePaymentTerm.InvoicePaymentTermId
+                                                      FROM Accounting.InvoicePaymentTerm
+                                                     WHERE InvoicePaymentTerm.Code = 'Net30'
+    );
+    DECLARE @lNet10InvoicePaymentTermId SMALLINT = (SELECT InvoicePaymentTerm.InvoicePaymentTermId
+                                                      FROM Accounting.InvoicePaymentTerm
+                                                     WHERE InvoicePaymentTerm.Code = 'Net10'
+    );
+
+    DECLARE @lExpenseBillingRecordTypeId SMALLINT = (SELECT TOP 1 BillingRecordType.BillingRecordTypeId
+                                                       FROM Accounting.BillingRecordType
+                                                      WHERE BillingRecordType.Code = 'Expense'
+    );
+
+    DECLARE @lJRDBillingRecordTypeId SMALLINT = (SELECT TOP 1 BillingRecordType.BillingRecordTypeId
+                                                   FROM Accounting.BillingRecordType
+                                                  WHERE BillingRecordType.Code = 'JointRevenueDeduction'
+    );
+
+    DECLARE @lPSOServiceOrderTypeId SMALLINT = (SELECT TOP 1 ServiceOrderType.ServiceOrderTypeId
+                                                  FROM Accounting.ServiceOrderType
+                                                 WHERE ServiceOrderType.Code = 'PortServiceOrder'
+    );
+
+    DECLARE @lAssociationTypeId SMALLINT = (SELECT TOP 1 InvoiceAssociationType.InvoiceAssociationTypeId
+                                              FROM Accounting.InvoiceAssociationType
+                                             WHERE InvoiceAssociationType.Code = 'Default'
+    );
+
+    INSERT INTO Accounting.InvoiceCalendarAssociationRule(InvoiceCalendarConfigurationId
+                                                         ,EffectiveStartDate
+                                                         ,EffectiveEndDate
+                                                         ,AssetGroupId
+                                                         ,CommercialAssetId
+                                                         ,BusinessEntityId
+                                                         ,ServiceFeeTypeId
+                                                         ,ContractId
+                                                         ,PaymentTermId
+                                                         ,AssociationTypeId
+                                                         ,IsPriorPeriodAdjustmentOverride
+                                                         ,IsAllBusinessEntitySelected
+                                                         ,IsAllContractSelected
+                                                         ,IsAllServiceFeeSelected
+                                                         ,CreatedBy
+                                                         ,CreationDateTime
+                                                         ,FeeTemplateTypeId
+                                                         ,ServiceOrderTypeId
+                                                         ,IsSystemDefined
+                                                         ,BillingRecordTypeId
+                                                         )
+    VALUES
+    -- TimeBased Association Rule
+    (@lDailyInvoiceCalendarConfigurationId
+    ,@lEffectiveStartDate
+    ,@lEffectiveEndDate
+    ,NULL
+    ,NULL
+    ,NULL
+    ,NULL
+    ,NULL
+    ,@lNet10InvoicePaymentTermId
+    ,@lAssociationTypeId
+    ,@lIsPriorPeriodAdjustmentOverride
+    ,@lIsAllBusinessEntitySelected
+    ,@lIsAllContractSelected
+    ,@lIsAllServiceFeeSelected
+    ,@lCreatedBy
+    ,@lCreatedDate
+    ,@lTimeBasedFeeTemaplate
+    ,NULL
+    ,@lIsSystemDefined
+    ,NULL
+           )
+    ---- DeficiencyFeeTemaplate Association rule  
+    ,(@lDailyInvoiceCalendarConfigurationId
+     ,@lEffectiveStartDate
+     ,@lEffectiveEndDate
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,@lNet10InvoicePaymentTermId
+     ,@lAssociationTypeId
+     ,@lIsPriorPeriodAdjustmentOverride
+     ,@lIsAllBusinessEntitySelected
+     ,@lIsAllContractSelected
+     ,@lIsAllServiceFeeSelected
+     ,@lCreatedBy
+     ,@lCreatedDate
+     ,@lDeficiencyFeeTemaplate
+     ,NULL
+     ,@lIsSystemDefined
+     ,NULL
+           )
+    ---- PSO Association rule
+    ,(@lDailyInvoiceCalendarConfigurationId
+     ,@lEffectiveStartDate
+     ,@lEffectiveEndDate
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,@lNet30InvoicePaymentTermId
+     ,@lAssociationTypeId
+     ,@lIsPriorPeriodAdjustmentOverride
+     ,@lIsAllBusinessEntitySelected
+     ,@lIsAllContractSelected
+     ,@lIsAllServiceFeeSelected
+     ,@lCreatedBy
+     ,@lCreatedDate
+     ,@lEventFeeTemaplate
+     ,@lPSOServiceOrderTypeId
+     ,@lIsSystemDefined
+     ,NULL
+           )
+    ---- Expense Billing record association rule 
+    ,(@lDailyInvoiceCalendarConfigurationId
+     ,@lEffectiveStartDate
+     ,@lEffectiveEndDate
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,@lImmediateInvoicePaymentTermId
+     ,@lAssociationTypeId
+     ,@lIsPriorPeriodAdjustmentOverride
+     ,@lIsAllBusinessEntitySelected
+     ,@lIsAllContractSelected
+     ,@lIsAllServiceFeeSelected
+     ,@lCreatedBy
+     ,@lCreatedDate
+     ,NULL
+     ,NULL
+     ,@lIsSystemDefined
+     ,@lExpenseBillingRecordTypeId
+           )
+    ----JRD Billingrecord type association rule
+    ,(@lDailyInvoiceCalendarConfigurationId
+     ,@lEffectiveStartDate
+     ,@lEffectiveEndDate
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,NULL
+     ,@lImmediateInvoicePaymentTermId
+     ,@lAssociationTypeId
+     ,@lIsPriorPeriodAdjustmentOverride
+     ,@lIsAllBusinessEntitySelected
+     ,@lIsAllContractSelected
+     ,@lIsAllServiceFeeSelected
+     ,@lCreatedBy
+     ,@lCreatedDate
+     ,NULL
+     ,NULL
+     ,@lIsSystemDefined
+     ,@lJRDBillingRecordTypeId
+           );
+
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    SELECT ERROR_MESSAGE();
+    ROLLBACK TRAN;
+END CATCH;
