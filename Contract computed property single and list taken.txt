@@ -1,0 +1,431 @@
+// <copyright file="ContractViewModel.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+
+using Estream.Common.Utilities;
+using Estream.Common.Web.ViewModels;
+using Estream.Contracts.Common.Contracts.Entities;
+using Estream.Contracts.Common.Contracts.Enums;
+using Estream.Contracts.Common.Contracts.Queries;
+using Estream.Contracts.Common.Enums;
+using Estream.Contracts.Common.MasterData.Entities;
+using Estream.Contracts.Common.MasterData.Queries;
+using Estream.Web.Areas.Contracts.ViewModels.Tariffs;
+
+using Foundation.Coding.Extensions;
+
+using Highway.Data;
+
+namespace Estream.Web.Areas.Contracts.ViewModels.Contracts
+{
+    public class ContractViewModel : IKeyValueViewModel<long>
+    {
+        public ContractViewModel()
+        {
+            CustomerAccountIds = Enumerable.Empty<long>();
+            ContractIsReadOnly = false;
+            ContractStatus = ContractStatus.Inactive;
+            ParticipatingCompanies = new List<ParticipatingCompanyViewModel>();
+            HasHoldback = null;
+            IsCycleBased = null;
+            IsMovementCommercialAssetUsedForAccountCoding = null;
+        }
+
+        public ContractViewModel(BaseContract contract)
+            : this()
+        {
+            Id = contract.Id;
+            Number = contract.SmartCode;
+            Status = contract.Status.ToString();
+            ContractStatus = contract.Status;
+            StartDate = contract.StartDate;
+            EndDate = contract.EndDate;
+            BusinessDevelopmentContact = contract.AssetOwnerContact;
+            Description = contract.Description;
+            Alias = contract.Alias;
+            CustomerReferenceContact = contract.CustomerContact;
+            CustomerId = contract.Customer.Id;
+            ServiceType = contract.ServiceTypeId;
+            SubType = contract.ServiceSubTypeId;
+            CommercialAssetId = contract.CommercialAssetId;
+            CommercialAssetName = contract.CommercialAsset.ShortName;
+            TermTypeId = contract.ContractTermTypeId;
+            TermTypeName = contract.TermType.Name;
+            ContractGroupId = contract.ContractGroupId;
+            ContractGroupName = contract.ContractGroup != null
+                ? contract.ContractGroup.Name
+                : string.Empty;
+
+            AssetOwnerId = contract.AssetOwnerId;
+            AssetOwnerName = contract.AssetOwner.ShortName;
+            InterCompanyCommercialAssetName = contract.InterCompanyCommercialAsset != null
+                ? contract.InterCompanyCommercialAsset.ShortName
+                : string.Empty;
+
+            AssetOwnerAccountName = contract.AssetOwnerAccount != null
+                ? contract.AssetOwnerAccount.ShortName
+                : string.Empty;
+
+            AssetGroupId = contract.AssetGroupId;
+            AssetGroupName = contract.AssetGroup.Name;
+            ExecutionDate = contract.ExecutionDate;
+            ObligationDate = contract.CommencementDate;
+            ReferenceContractNumber = contract.ReferenceContractNumber;
+            CustomerName = contract.Customer.ShortName;
+            CustomerAccountNames = contract.BusinessEntityAccounts.Select(x => x.ShortName);
+            IsBillable = (short)(contract.IsBillable
+                ? 1
+                : 0);
+            IsTariffBillable = (short)(contract.IsTariffBillable ? 1 : 0);
+            IsInterestedInTimePart = contract.IsInterestedInTimePart;
+            IsCycleBased = contract.IsCycleBased;
+            HasHoldback = contract.HasHoldback;
+            CreatedBy = contract.CreatedBy;
+            CreatedByUserId = contract.CreatedByUserId;
+            CreationDateTime = contract.CreationDateTime;
+            ApprovedBy = contract.ApprovedBy;
+            ApprovedByUserId = contract.ApprovedByUserId;
+            ApprovalDateTime = contract.ApprovalDateTime;
+            LastModifiedBy = contract.LastModifiedBy;
+            LastModifiedByUserId = contract.LastModifiedByUserId;
+            LastModificationDateTime = contract.LastModificationDateTime;
+            Billable = contract.IsBillable
+                ? BillableType.Billable.GetEnumDescription()
+                : BillableType.NonBillable.GetEnumDescription();
+
+            RateSheetBillable = contract.IsRateSheetBillable
+                ? YesNo.Yes.GetEnumDescription()
+                : YesNo.No.GetEnumDescription();
+
+            TariffBillable = contract.IsTariffBillable
+                ? YesNo.Yes.GetEnumDescription()
+                : YesNo.No.GetEnumDescription();
+
+            if (contract.Status == ContractStatus.Expired || contract.Status == ContractStatus.Cancelled)
+            {
+                ContractIsReadOnly = true;
+            }
+
+            if (contract.ContractRenewalTerm != null)
+            {
+                RenewalTerm = $"{contract.ContractRenewalTerm.RenewalTerm} {contract.ContractRenewalTerm.RenewalTermFrequencyPeriodType.GetEnumDescription()}";
+                NoticePeriod = $"{contract.ContractRenewalTerm.NoticePeriod} {contract.ContractRenewalTerm.NoticePeriodFrequencyPeriodType.GetEnumDescription()}";
+                WarningPeriod = $"{contract.ContractRenewalTerm.WarningPeriod} {contract.ContractRenewalTerm.WarningPeriodFrequencyPeriodType.GetEnumDescription()}";
+            }
+
+            EscalationPeriod = contract.ContractEscalationPeriod != null
+                ? $"From {contract.ContractEscalationPeriod.EscalationStartDate.ToShortDateString()} Every {contract.ContractEscalationPeriod.EscalationFrequencyPeriodType}"
+                : string.Empty;
+
+            IsJointContract = contract.IsJointContract;
+            IsEDIEnabled = (short)(contract.IsEDIEnabled
+                ? 1
+                : 0);
+            EDIEnabled = contract.IsEDIEnabled
+                ? YesNo.Yes.GetEnumDescription()
+                : YesNo.No.GetEnumDescription();
+
+            IsMovementCommercialAssetUsedForAccountCoding = contract.IsMovementCommercialAssetUsedForAccountCoding;
+        }
+
+        public IEnumerable<object> AllEnterpriseJointCompanies { get; set; }
+
+        public IEnumerable<object> AllIssuingAccounts { get; set; }
+
+        public IEnumerable<object> AllIssuingAssets { get; set; }
+
+        public IEnumerable<object> AllIssuingCompanies { get; set; }
+
+        public IEnumerable<object> AllParticipatingAssets { get; set; }
+
+        public IEnumerable<object> AllParticipatingEnterpriseAccounts { get; set; }
+
+        public DateTime? ApprovalDateTime { get; set; }
+
+        public Estream.Contracts.Common.MasterData.Entities.User ApprovedBy { get; set; }
+
+        public long? ApprovedByUserId { get; set; }
+
+        public long AssetGroupId { get; set; }
+
+        public string AssetGroupName { get; set; }
+
+        public IEnumerable<object> AssetGroups { get; set; }
+
+        public long? AssetOwnerAccountId { get; set; }
+
+        public string AssetOwnerAccountName { get; set; }
+
+        public long AssetOwnerId { get; set; }
+
+        public string AssetOwnerName { get; set; }
+
+        public IEnumerable<object> AssetOwners { get; set; }
+
+        public string Billable { get; set; }
+
+        public IEnumerable<SimpleType<short>> BillableTypes
+        {
+            get
+            {
+                return GetEnumValues.Of<BillableType>().Select(
+                    d => new SimpleType<short>
+                    {
+                        Id = (short)d,
+                        Name = d.GetEnumDescription()
+                    });
+            }
+        }
+
+        public string BusinessDevelopmentContact { get; set; }
+
+        public IEnumerable<SimpleType<long>> BusinessEntityConfigurations { get; set; }
+
+        public long CommercialAssetId { get; set; }
+
+        public IEnumerable<long> CommercialAssetIds { get; set; }
+
+        public string CommercialAssetName { get; set; }
+
+        public IEnumerable<object> CommercialAssets { get; set; }
+
+        public long? ContractGroupId { get; set; }
+
+        public string ContractGroupName { get; set; }
+
+        public IEnumerable<object> ContractGroups { get; set; }
+
+        public bool ContractIsReadOnly { get; }
+
+        public ContractStatus ContractStatus { get; }
+
+        public Estream.Contracts.Common.MasterData.Entities.User CreatedBy { get; set; }
+
+        public long CreatedByUserId { get; set; }
+
+        public DateTime CreationDateTime { get; set; }
+
+        public IEnumerable<long> CustomerAccountIds { get; set; }
+
+        // Bug 258547 entered to address the need for multiple customer account vars and computing.
+        public long CustomerAccountId { get; set; }
+
+        public ICollection<long> ComputedCustomerAccountIds
+        {
+            get
+            {
+                var collection = new List<long>();
+                if (!CustomerAccountIds.Any() && CustomerAccountId > 0)
+                {
+                    collection.Add(CustomerAccountId);
+                }
+                else
+                {
+                    collection.AddRange(CustomerAccountIds);
+                }
+                return collection;
+            }
+        }
+
+        public IEnumerable<string> CustomerAccountNames { get; set; }
+
+        public long CustomerId { get; set; }
+
+        public string CustomerName { get; set; }
+
+        public string CustomerReferenceContact { get; set; }
+
+        public string Description { get; set; }
+
+        public string Alias { get; set; }
+
+        public DateTime EndDate { get; set; }
+
+        public string EscalationPeriod { get; set; }
+
+        public DateTime? ExecutionDate { get; set; }
+
+        [Required]
+        public bool? HasHoldback { get; set; }
+
+        public bool? IsCycleBased { get; set; }
+
+        public bool? IsMovementCommercialAssetUsedForAccountCoding { get; set; }
+
+        public long Id { get; set; }
+
+        public IEnumerable<object> InterCompanyAssetOwnerAccounts { get; set; }
+
+        public long? InterCompanyCommercialAssetId { get; set; }
+
+        public string InterCompanyCommercialAssetName { get; set; }
+
+        public IEnumerable<object> InterCompanyCommercialAssets { get; set; }
+
+        public short InvoicingMethodTypeId { get; set; }
+
+        public bool IsInterestedInTimePart { get; set; }
+
+        public short IsBillable { get; set; }
+
+        public bool IsEditable { get; set; }
+
+        public bool IsJointContract { get; set; }
+
+        public short IsRateSheetBillable { get; set; }
+
+        public short IsTariffBillable { get; set; }
+
+        public short IsEDIEnabled { get; set; }
+
+        public IEnumerable<object> IssuerTypes =>
+            GetEnumValues.Of<IssuerType>().Select(
+                d => new SimpleType<short>
+                {
+                    Id = (short)d,
+                    Name = d.GetEnumDescription()
+                });
+
+        public long? IssuingAccountId { get; set; }
+
+        public long? IssuingAssetId { get; set; }
+
+        public long? IssuingCompanyId { get; set; }
+
+        public DateTime? LastModificationDateTime { get; set; }
+
+        public Estream.Contracts.Common.MasterData.Entities.User LastModifiedBy { get; set; }
+
+        public long? LastModifiedByUserId { get; set; }
+
+        public string NoticePeriod { get; set; }
+
+        public string Number { get; set; }
+
+        public DateTime? ObligationDate { get; set; }
+
+        public IEnumerable<ParticipatingCompanyViewModel> ParticipatingCompanies { get; set; }
+
+        public string RateSheetBillable { get; set; }
+
+        public string TariffBillable { get; set; }
+
+        public string ReferenceContract { get; set; }
+
+        public string ReferenceContractNumber { get; private set; }
+
+        public string RenewalTerm { get; set; }
+
+        public string EDIEnabled { get; set; }
+
+        public ContractServiceType ServiceType { get; set; }
+
+        public IEnumerable<ServiceTypeViewModel> ServiceTypes { get; set; }
+
+        public string SmartCode { get; set; }
+
+        public DateTime StartDate { get; set; }
+
+        public string Status { get; set; }
+
+        public ServiceSubType SubType { get; set; }
+
+        public short TermTypeId { get; set; }
+
+        public string TermTypeName { get; set; }
+
+        public Dictionary<short, string> TermTypes { get; set; }
+
+        public string Value { get; set; }
+
+        public string WarningPeriod { get; set; }
+
+        public IEnumerable<ConnectedAssetGroup> ConnectedAssetGroups { get; set; }
+
+        public IEnumerable<SimpleType<short>> YesNoTypes
+        {
+            get
+            {
+                return GetEnumValues.Of<YesNo>().Select(
+                    d => new SimpleType<short>
+                    {
+                        Id = (short)d,
+                        Name = d.GetEnumDescription()
+                    });
+            }
+        }
+
+        public void InitializeViewModel(IRepository repository)
+        {
+            var serviceTypes = repository.Find(new GetServiceTypes()).OrderBy(d => d.Description);
+            var contractGroups = repository.Find(new GetAllContractGroup()).OrderBy(x => x.Name);
+            ContractGroups = contractGroups.Select(x => new { x.Id, x.Name, x.CommercialAssetIds, x.CustomerId, x.EffectiveFromDate, x.EffectiveToDate });
+            ServiceTypes = serviceTypes.Select(st => new ServiceTypeViewModel(st)).OrderBy(c => c.Name).ToList();
+            TermTypes = repository.Find(new FindAll<TermType>()).ToDictionary(x => x.Id, x => x.Name);
+            BusinessEntityConfigurations = repository.Find(new GetUnSecuredBusinessEntityOffsettingTransactionIndiactor());
+            var contractGroup = ContractGroupId.HasValue
+                ? repository.Find(new GetContractGroupById(ContractGroupId.Value))
+                : null;
+
+            if (contractGroup != null)
+            {
+                StartDate = contractGroup.EffectiveFromDate;
+                EndDate = contractGroup.EffectiveToDate;
+                AssetGroupId = contractGroup.AssetGroup.Id;
+                AssetOwnerId = contractGroup.AssetOwner.Id;
+                CustomerId = contractGroup.CustomerId;
+                InvoicingMethodTypeId = contractGroup.InvoicingMethodTypeId;
+                CommercialAssetIds = contractGroup.CommercialAssetIds;
+                if (contractGroup.CommercialAssets.Count() == 1)
+                {
+                    CommercialAssetId = contractGroup.CommercialAssets.First().Id;
+                }
+            }
+
+            if (IsJointContract)
+            {
+                ServiceTypes = ServiceTypes.Where(s => s.Id == (long)ContractServiceType.Transportation || s.Id == (long)ContractServiceType.TerminalServiceAgreement).OrderBy(c => c.Name).ToList();
+                ConnectedAssetGroups = repository.Find(new GetConnectedAssetGroupByConnectPhysicalAssets()).ToList();
+            }
+
+            AssetGroups = repository.Find(new FindAll<AssetGroup>())
+                                    .Select(x => new { AssetGroupId = x.Id, AssetGroupName = x.Name }).Distinct().OrderBy(x => x.AssetGroupName);
+
+            var commercialAssets = repository.Find(new GetAllCommercialAssets()).ToList();
+
+            AssetOwners = commercialAssets
+                                    .Select(
+                                        x => new
+                                        {
+                                            AssetGroupId = x.AssetGroup.Id,
+                                            AssetOwnerId = x.Owner.Id,
+                                            AssetOwnerName = x.Owner.ShortName
+                                        }).Distinct().OrderBy(x => x.AssetOwnerName);
+
+            CommercialAssets = commercialAssets
+                                         .Select(
+                                             x => new
+                                             {
+                                                 AssetGroupId = x.AssetGroup.Id,
+                                                 AssetOwnerId = x.Owner.Id,
+                                                 CommercialAssetId = x.Id,
+                                                 CommercialAssetName = x.ShortName
+                                             }).Distinct().OrderBy(x => x.CommercialAssetName);
+
+            AllEnterpriseJointCompanies = AssetOwners;
+            AllIssuingAssets = CommercialAssets;
+            AllIssuingCompanies = AssetOwners;
+            InterCompanyCommercialAssets = CommercialAssets;
+            AllParticipatingAssets = CommercialAssets;
+        }
+    }
+}

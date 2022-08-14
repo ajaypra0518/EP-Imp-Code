@@ -1,0 +1,1268 @@
+// <copyright file="AccountCodeDeterminationRuleViewModel.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Estream.Accounting.AccountingViewSupportDomain.Entities;
+using Estream.Accounting.AccountingViewSupportDomain.Queries;
+using Estream.Accounting.AccountingViewSupportDomain.Queries.Secured;
+using Estream.Accounting.Common.Enums;
+using Estream.Accounting.Constants;
+using Estream.Accounting.DeterminationRuleDomain.Entities;
+using Estream.Accounting.DeterminationRuleDomain.Transitions;
+using Estream.Accounting.DeterminationRuleDomain.ValueObjects;
+using Estream.Common.Entitlements.Action;
+using Estream.Common.Entitlements.Data;
+using Estream.Common.Utilities;
+using Estream.Common.Web.ViewModels;
+using Estream.Web.Common.Extensions;
+
+using Foundation.Coding.ErrorHandling;
+using Foundation.Coding.Extensions;
+
+using Highway.Data;
+
+using MoreLinq;
+
+namespace Estream.Web.Areas.Accounting.Models
+{
+    public enum DeterminationRuleType : short
+    {
+        No = 0,
+
+        Yes = 1,
+
+        All = 2
+    }
+
+    public class AccountCodeDeterminationRuleViewModel : AccountingBaseViewModel
+    {
+        public AccountCodeDeterminationRuleViewModel()
+        {
+        }
+
+        public AccountCodeDeterminationRuleViewModel(DeterminationRule determinationRule)
+        {
+            Id = determinationRule.Id;
+            BillingRecordTypeId = determinationRule.BillingRecordTypeId;
+            BillingCompanyId = determinationRule.BillingCompanyId;
+            if (determinationRule.IsJointDivision.HasValue && determinationRule.IsJointDivision.Value)
+            {
+                EnableDistributionCustomerAccount = true;
+            }
+
+            DistCustomerAccNameId = determinationRule.DistributionCustomerAccountId;
+            CommercialAssetId = determinationRule.AssetId ?? 0;
+            FacilityId = determinationRule.FacilityId ?? 0;
+            ProductId = determinationRule.ProductId == null && determinationRule.InventoryProductGroupId == null
+                ? 0
+                : determinationRule.ProductId;
+
+            InterCompanyId = determinationRule.InterCompanyId ?? 0;
+            DistributionCustomerAccountId = determinationRule.DistributionCustomerAccountId ?? 0;
+            FacilityGroupId = determinationRule.FacilityGroupId ?? 0;
+
+            InventoryValuationTypeId = determinationRule.InventoryValuationTypeId ?? 0;
+            GainLossSubTypeId = determinationRule.InventoryTicketSubTypeId ?? 0;
+            if (BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                EnableServiceFee = false;
+                EnableFacilityGroup = true;
+                EnableValuationType = true;
+                EnableInventoryTicketType = true;
+                ServiceFeeId = null;
+            }
+            else
+            {
+                ServiceFeeId = determinationRule.ServiceFeeTypeId ?? 0;
+            }
+
+            ComponentId = determinationRule.ComponentId ?? 0;
+            Description = determinationRule.Description;
+            IsPrepaid = determinationRule.IsPrepaid;
+            InterIntra = determinationRule.InterIntra;
+            Estimated = ConvertToEnum(determinationRule.IsEstimated);
+            IsActive = determinationRule.IsActive;
+            JointDivision = ConvertToEnum(determinationRule.IsJointDivision);
+            LedgerTypeId = determinationRule.LedgerTypeId;
+            AccrualCreditAccountCodeId = determinationRule.AccrualCreditAccountCodeId;
+            AccrualDebitAccountCodeId = determinationRule.AccrualDebitAccountCodeId;
+
+            // TODO: These values should be required...not sure why they are nullable need to verify
+            CreditAccountCodeId = (long)determinationRule?.CreditAccountCodeId;
+            DebitAccountCodeId = (long)determinationRule?.DebitAccountCodeId;
+            DeferralCreditAccountCodeId = determinationRule.DeferralCreditAccountCodeId;
+            DeferralDebitAccountCodeId = determinationRule.DeferralDebitAccountCodeId;
+            AccrualCreditAccountCode = new AccountCodeModel(determinationRule.AccrualCreditAccountCode);
+            AccrualDebitAccountCode = new AccountCodeModel(determinationRule.AccrualDebitAccountCode);
+            CreditAccountCode = new AccountCodeModel(determinationRule.CreditAccountCode);
+            DebitAccountCode = new AccountCodeModel(determinationRule.DebitAccountCode);
+            DeferralCreditAccountCode = new AccountCodeModel(determinationRule.DeferralCreditAccountCode);
+            DeferralDebitAccountCode = new AccountCodeModel(determinationRule.DeferralDebitAccountCode);
+            AmortizationCreditAccountCode = new AccountCodeModel(determinationRule.AmortizationCreditAccountCode);
+            AmortizationDebitAccountCode = new AccountCodeModel(determinationRule.AmortizationDebitAccountCode);
+            ReClassCreditAccountCode = new AccountCodeModel(determinationRule.ReClassCreditAccountCode);
+            ReClassDebitAccountCode = new AccountCodeModel(determinationRule.ReClassDebitAccountCode);
+            JointDevision = new Dictionary<long, string>();
+            Estimate = new Dictionary<long, string>();
+            InventoryProductGroupId = determinationRule.InventoryProductGroupId;
+        }
+
+        public AccountCodeDeterminationRuleViewModel(FlatDeterminationRule determinationRule, List<string> productsForProductGroup)
+        {
+            Id = determinationRule.Id;
+            BillingRecordTypeId = determinationRule.BillingRecordTypeId;
+            BillingCompanyId = determinationRule.BillingCompanyId;
+            DistCustomerAccNameId = determinationRule.DistributionCustomerAccountId;
+            CommercialAssetId = determinationRule.CommercialAssetId;
+            FacilityId = determinationRule.FacilityId;
+            ProductId = determinationRule.ProductId;
+
+            ComponentId = determinationRule.ComponentId;
+            InventoryValuationTypeId = determinationRule.InventoryValuationTypeId;
+            FacilityGroupId = determinationRule.FacilityGroupId;
+            GainLossSubTypeId = determinationRule.InventoryTicketSubTypeId;
+            DistributionCustomerAccountId = determinationRule.DistributionCustomerAccountId;
+            InterCompanyId = determinationRule.InterCompanyId;
+            ServiceFeeId = determinationRule.ServiceFeeTypeId;
+            OverShortCategoryId = determinationRule.OverShortCategoryId;
+            Description = determinationRule.Description;
+            IsActive = determinationRule.IsActive;
+            IsPrepaid = determinationRule.IsPrepaid;
+            BillingRecordType = determinationRule.BillingRecordType;
+            BillingCompanyName = determinationRule.BillingCompanyName;
+            DistCustomerAccName = determinationRule.DistCustomerAccName;
+            CommercialAssetName = determinationRule.CommercialAssetName;
+            FacilityName = determinationRule.FacilityName;
+            ProductName = determinationRule.ProductName;
+            InventoryTicketTypeName = determinationRule.InventoryTicketTypeName;
+            InterCompanyName = determinationRule.InterCompanyName;
+            ServiceFeeName = determinationRule.ServiceFeeName;
+            OverShortCategoryName = determinationRule.OverShortCategoryName;
+
+            // TODO Fix Ledger Type
+            LedgerTypeId = determinationRule.LedgerTypeId;
+            LedgerTypeDescription = determinationRule.LedgerTypeDescription;
+            LedgerTypeCode = determinationRule.LedgerTypeCode;
+            if (BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                FacilityGroupName = determinationRule.FacilityGroupName;
+                ComponentName = determinationRule.ComponentName;
+                ValuationName = determinationRule.InventoryValuationType;
+                GainLossTypeSubTypeId = determinationRule.InventoryTicketSubTypeId;
+            }
+
+            InterIntra = determinationRule.InterIntra;
+            Estimated = ConvertToEnum(determinationRule.IsEstimated);
+            JointDivision = ConvertToEnum(determinationRule.IsJointDivision);
+            CreditAccountCodeString = determinationRule.CreditAccountCodeString;
+            CreditAccountCodeCompany = determinationRule.CreditAccountCodeCompany;
+            CreditAccountCodeCompanyName = determinationRule.CreditAccountCodeCompanyName;
+            CreditAccountCodeMajor = determinationRule.CreditAccountCodeMajor;
+            CreditAccountCodeMajorName = determinationRule.CreditAccountCodeMajorName;
+            CreditAccountCodeMinor = determinationRule.CreditAccountCodeMinor;
+            CreditAccountCodeMinorName = determinationRule.CreditAccountCodeMinorName;
+            CreditAccountCodeCostCenter = determinationRule.CreditAccountCodeCostCenter;
+            CreditAccountCodeCostCenterName = determinationRule.CreditAccountCodeCostCenterName;
+            CreditAccountCodeInterCompany = determinationRule.CreditAccountCodeInterCompany;
+            CreditAccountCodeInterCompanyName = determinationRule.CreditAccountCodeInterCompanyName;
+            CreditAccountCodeFerc = determinationRule.CreditAccountCodeFerc;
+            CreditAccountCodeFercName = determinationRule.CreditAccountCodeFercName;
+
+            DebitAccountCodeString = determinationRule.DebitAccountCodeString;
+            DebitAccountCodeCompany = determinationRule.DebitAccountCodeCompany;
+            DebitAccountCodeCompanyName = determinationRule.DebitAccountCodeCompanyName;
+            DebitAccountCodeMajor = determinationRule.DebitAccountCodeMajor;
+            DebitAccountCodeMajorName = determinationRule.DebitAccountCodeMajorName;
+            DebitAccountCodeMinor = determinationRule.DebitAccountCodeMinor;
+            DebitAccountCodeMinorName = determinationRule.DebitAccountCodeMinorName;
+            DebitAccountCodeCostCenter = determinationRule.DebitAccountCodeCostCenter;
+            DebitAccountCodeCostCenterName = determinationRule.DebitAccountCodeCostCenterName;
+            DebitAccountCodeInterCompany = determinationRule.DebitAccountCodeInterCompany;
+            DebitAccountCodeInterCompanyName = determinationRule.DebitAccountCodeInterCompanyName;
+            DebitAccountCodeFerc = determinationRule.DebitAccountCodeFerc;
+            DebitAccountCodeFercName = determinationRule.DebitAccountCodeFercName;
+
+            AccrualCreditAccountCodeString = determinationRule.AccrualCreditAccountCodeString;
+            AccrualCreditAccountCodeCompany = determinationRule.AccrualCreditAccountCodeCompany;
+            AccrualCreditAccountCodeCompanyName = determinationRule.AccrualCreditAccountCodeCompanyName;
+            AccrualCreditAccountCodeMajor = determinationRule.AccrualCreditAccountCodeMajor;
+            AccrualCreditAccountCodeMajorName = determinationRule.AccrualCreditAccountCodeMajorName;
+            AccrualCreditAccountCodeMinor = determinationRule.AccrualCreditAccountCodeMinor;
+            AccrualCreditAccountCodeMinorName = determinationRule.AccrualCreditAccountCodeMinorName;
+            AccrualCreditAccountCodeCostCenter = determinationRule.AccrualCreditAccountCodeCostCenter;
+            AccrualCreditAccountCodeCostCenterName = determinationRule.AccrualCreditAccountCodeCostCenterName;
+            AccrualCreditAccountCodeInterCompany = determinationRule.AccrualCreditAccountCodeInterCompany;
+            AccrualCreditAccountCodeInterCompanyName = determinationRule.AccrualCreditAccountCodeInterCompanyName;
+            AccrualCreditAccountCodeFerc = determinationRule.AccrualCreditAccountCodeFerc;
+            AccrualCreditAccountCodeFercName = determinationRule.AccrualCreditAccountCodeFercName;
+
+            AccrualDebitAccountCodeString = determinationRule.AccrualDebitAccountCodeString;
+            AccrualDebitAccountCodeCompany = determinationRule.AccrualDebitAccountCodeCompany;
+            AccrualDebitAccountCodeCompanyName = determinationRule.AccrualDebitAccountCodeCompanyName;
+            AccrualDebitAccountCodeMajor = determinationRule.AccrualDebitAccountCodeMajor;
+            AccrualDebitAccountCodeMajorName = determinationRule.AccrualDebitAccountCodeMajorName;
+            AccrualDebitAccountCodeMinor = determinationRule.AccrualDebitAccountCodeMinor;
+            AccrualDebitAccountCodeMinorName = determinationRule.AccrualDebitAccountCodeMinorName;
+            AccrualDebitAccountCodeCostCenter = determinationRule.AccrualDebitAccountCodeCostCenter;
+            AccrualDebitAccountCodeCostCenterName = determinationRule.AccrualDebitAccountCodeCostCenterName;
+            AccrualDebitAccountCodeInterCompany = determinationRule.AccrualDebitAccountCodeInterCompany;
+            AccrualDebitAccountCodeInterCompanyName = determinationRule.AccrualDebitAccountCodeInterCompanyName;
+            AccrualDebitAccountCodeFerc = determinationRule.AccrualDebitAccountCodeFerc;
+            AccrualDebitAccountCodeFercName = determinationRule.AccrualDebitAccountCodeFercName;
+
+            DeferralCreditAccountCodeString = determinationRule.DeferralCreditAccountCodeString;
+            DeferralCreditAccountCodeCompany = determinationRule.DeferralCreditAccountCodeCompany;
+            DeferralCreditAccountCodeCompanyName = determinationRule.DeferralCreditAccountCodeCompanyName;
+            DeferralCreditAccountCodeMajor = determinationRule.DeferralCreditAccountCodeMajor;
+            DeferralCreditAccountCodeMajorName = determinationRule.DeferralCreditAccountCodeMajorName;
+            DeferralCreditAccountCodeMinor = determinationRule.DeferralCreditAccountCodeMinor;
+            DeferralCreditAccountCodeMinorName = determinationRule.DeferralCreditAccountCodeMinorName;
+            DeferralCreditAccountCodeCostCenter = determinationRule.DeferralCreditAccountCodeCostCenter;
+            DeferralCreditAccountCodeCostCenterName = determinationRule.DeferralCreditAccountCodeCostCenterName;
+            DeferralCreditAccountCodeInterCompany = determinationRule.DeferralCreditAccountCodeInterCompany;
+            DeferralCreditAccountCodeInterCompanyName = determinationRule.DeferralCreditAccountCodeInterCompanyName;
+            DeferralCreditAccountCodeFerc = determinationRule.DeferralCreditAccountCodeFerc;
+            DeferralCreditAccountCodeFercName = determinationRule.DeferralCreditAccountCodeFercName;
+
+            DeferralDebitAccountCodeString = determinationRule.DeferralDebitAccountCodeString;
+            DeferralDebitAccountCodeCompany = determinationRule.DeferralDebitAccountCodeCompany;
+            DeferralDebitAccountCodeCompanyName = determinationRule.DeferralDebitAccountCodeCompanyName;
+            DeferralDebitAccountCodeMajor = determinationRule.DeferralDebitAccountCodeMajor;
+            DeferralDebitAccountCodeMajorName = determinationRule.DeferralDebitAccountCodeMajorName;
+            DeferralDebitAccountCodeMinor = determinationRule.DeferralDebitAccountCodeMinor;
+            DeferralDebitAccountCodeMinorName = determinationRule.DeferralDebitAccountCodeMinorName;
+            DeferralDebitAccountCodeCostCenter = determinationRule.DeferralDebitAccountCodeCostCenter;
+            DeferralDebitAccountCodeCostCenterName = determinationRule.DeferralDebitAccountCodeCostCenterName;
+            DeferralDebitAccountCodeInterCompany = determinationRule.DeferralDebitAccountCodeInterCompany;
+            DeferralDebitAccountCodeInterCompanyName = determinationRule.DeferralDebitAccountCodeInterCompanyName;
+            DeferralDebitAccountCodeFerc = determinationRule.DeferralDebitAccountCodeFerc;
+            DeferralDebitAccountCodeFercName = determinationRule.DeferralDebitAccountCodeFercName;
+
+            AmortizationCreditAccountCodeString = determinationRule.AmortizationCreditAccountCodeString;
+            AmortizationCreditAccountCodeCompany = determinationRule.AmortizationCreditAccountCodeCompany;
+            AmortizationCreditAccountCodeCompanyName = determinationRule.AmortizationCreditAccountCodeCompanyName;
+            AmortizationCreditAccountCodeMajor = determinationRule.AmortizationCreditAccountCodeMajor;
+            AmortizationCreditAccountCodeMajorName = determinationRule.AmortizationCreditAccountCodeMajorName;
+            AmortizationCreditAccountCodeMinor = determinationRule.AmortizationCreditAccountCodeMinor;
+            AmortizationCreditAccountCodeMinorName = determinationRule.AmortizationCreditAccountCodeMinorName;
+            AmortizationCreditAccountCodeCostCenter = determinationRule.AmortizationCreditAccountCodeCostCenter;
+            AmortizationCreditAccountCodeCostCenterName = determinationRule.AmortizationCreditAccountCodeCostCenterName;
+            AmortizationCreditAccountCodeInterCompany = determinationRule.AmortizationCreditAccountCodeInterCompany;
+            AmortizationCreditAccountCodeInterCompanyName = determinationRule.AmortizationCreditAccountCodeInterCompanyName;
+            AmortizationCreditAccountCodeFerc = determinationRule.AmortizationCreditAccountCodeFerc;
+            AmortizationCreditAccountCodeFercName = determinationRule.AmortizationCreditAccountCodeFercName;
+
+            AmortizationDebitAccountCodeString = determinationRule.AmortizationDebitAccountCodeString;
+            AmortizationDebitAccountCodeCompany = determinationRule.AmortizationDebitAccountCodeCompany;
+            AmortizationDebitAccountCodeCompanyName = determinationRule.AmortizationDebitAccountCodeCompanyName;
+            AmortizationDebitAccountCodeMajor = determinationRule.AmortizationDebitAccountCodeMajor;
+            AmortizationDebitAccountCodeMajorName = determinationRule.AmortizationDebitAccountCodeMajorName;
+            AmortizationDebitAccountCodeMinor = determinationRule.AmortizationDebitAccountCodeMinor;
+            AmortizationDebitAccountCodeMinorName = determinationRule.AmortizationDebitAccountCodeMinorName;
+            AmortizationDebitAccountCodeCostCenter = determinationRule.AmortizationDebitAccountCodeCostCenter;
+            AmortizationDebitAccountCodeCostCenterName = determinationRule.AmortizationDebitAccountCodeCostCenterName;
+            AmortizationDebitAccountCodeInterCompany = determinationRule.AmortizationDebitAccountCodeInterCompany;
+            AmortizationDebitAccountCodeInterCompanyName = determinationRule.AmortizationDebitAccountCodeInterCompanyName;
+            AmortizationDebitAccountCodeFerc = determinationRule.AmortizationDebitAccountCodeFerc;
+            AmortizationDebitAccountCodeFercName = determinationRule.AmortizationDebitAccountCodeFercName;
+
+            ReClassCreditAccountCodeString = determinationRule.ReClassCreditAccountCodeString;
+            ReClassCreditAccountCodeCompany = determinationRule.ReClassCreditAccountCodeCompany;
+            ReClassCreditAccountCodeCompanyName = determinationRule.ReClassCreditAccountCodeCompanyName;
+            ReClassCreditAccountCodeMajor = determinationRule.ReClassCreditAccountCodeMajor;
+            ReClassCreditAccountCodeMajorName = determinationRule.ReClassCreditAccountCodeMajorName;
+            ReClassCreditAccountCodeMinor = determinationRule.ReClassCreditAccountCodeMinor;
+            ReClassCreditAccountCodeMinorName = determinationRule.ReClassCreditAccountCodeMinorName;
+            ReClassCreditAccountCodeCostCenter = determinationRule.ReClassCreditAccountCodeCostCenter;
+            ReClassCreditAccountCodeCostCenterName = determinationRule.ReClassCreditAccountCodeCostCenterName;
+            ReClassCreditAccountCodeInterCompany = determinationRule.ReClassCreditAccountCodeInterCompany;
+            ReClassCreditAccountCodeInterCompanyName = determinationRule.ReClassCreditAccountCodeInterCompanyName;
+            ReClassCreditAccountCodeFerc = determinationRule.ReClassCreditAccountCodeFerc;
+            ReClassCreditAccountCodeFercName = determinationRule.ReClassCreditAccountCodeFercName;
+
+            ReClassDebitAccountCodeString = determinationRule.ReClassDebitAccountCodeString;
+            ReClassDebitAccountCodeCompany = determinationRule.ReClassDebitAccountCodeCompany;
+            ReClassDebitAccountCodeCompanyName = determinationRule.ReClassDebitAccountCodeCompanyName;
+            ReClassDebitAccountCodeMajor = determinationRule.ReClassDebitAccountCodeMajor;
+            ReClassDebitAccountCodeMajorName = determinationRule.ReClassDebitAccountCodeMajorName;
+            ReClassDebitAccountCodeMinor = determinationRule.ReClassDebitAccountCodeMinor;
+            ReClassDebitAccountCodeMinorName = determinationRule.ReClassDebitAccountCodeMinorName;
+            ReClassDebitAccountCodeCostCenter = determinationRule.ReClassDebitAccountCodeCostCenter;
+            ReClassDebitAccountCodeCostCenterName = determinationRule.ReClassDebitAccountCodeCostCenterName;
+            ReClassDebitAccountCodeInterCompany = determinationRule.ReClassDebitAccountCodeInterCompany;
+            ReClassDebitAccountCodeInterCompanyName = determinationRule.ReClassDebitAccountCodeInterCompanyName;
+            ReClassDebitAccountCodeFerc = determinationRule.ReClassDebitAccountCodeFerc;
+            ReClassDebitAccountCodeFercName = determinationRule.ReClassDebitAccountCodeFercName;
+
+            BillingRecordCount = determinationRule.BillingRecordCount;
+            InventoryValutionRecordCount = determinationRule.InventoryValutionRecordCount;
+            InventoryProductGroupId = determinationRule.InventoryProductGroupId;
+            InventoryProductGroupName = determinationRule.InventoryProductGroupName;
+            if (InventoryProductGroupId != null)
+            {
+                ProductsForProductGroup = productsForProductGroup;
+            }
+        }
+
+        public AccountCodeModel AccrualCreditAccountCode { get; set; }
+
+        public string AccrualCreditAccountCodeCompany { get; protected set; }
+
+        public string AccrualCreditAccountCodeCompanyName { get; protected set; }
+
+        public string AccrualCreditAccountCodeCostCenter { get; protected set; }
+
+        public string AccrualCreditAccountCodeCostCenterName { get; protected set; }
+
+        public string AccrualCreditAccountCodeFerc { get; protected set; }
+
+        public string AccrualCreditAccountCodeFercName { get; protected set; }
+
+        public long? AccrualCreditAccountCodeId { get; set; }
+
+        public string AccrualCreditAccountCodeInterCompany { get; protected set; }
+
+        public string AccrualCreditAccountCodeInterCompanyName { get; protected set; }
+
+        public string AccrualCreditAccountCodeMajor { get; protected set; }
+
+        public string AccrualCreditAccountCodeMajorName { get; protected set; }
+
+        public string AccrualCreditAccountCodeMinor { get; protected set; }
+
+        public string AccrualCreditAccountCodeMinorName { get; protected set; }
+
+        public string AccrualCreditAccountCodeString { get; protected set; }
+
+        public AccountCodeModel AccrualDebitAccountCode { get; set; }
+
+        public string AccrualDebitAccountCodeCompany { get; protected set; }
+
+        public string AccrualDebitAccountCodeCompanyName { get; protected set; }
+
+        public string AccrualDebitAccountCodeCostCenter { get; protected set; }
+
+        public string AccrualDebitAccountCodeCostCenterName { get; protected set; }
+
+        public string AccrualDebitAccountCodeFerc { get; protected set; }
+
+        public string AccrualDebitAccountCodeFercName { get; protected set; }
+
+        public long? AccrualDebitAccountCodeId { get; set; }
+
+        public string AccrualDebitAccountCodeInterCompany { get; protected set; }
+
+        public string AccrualDebitAccountCodeInterCompanyName { get; protected set; }
+
+        public string AccrualDebitAccountCodeMajor { get; protected set; }
+
+        public string AccrualDebitAccountCodeMajorName { get; protected set; }
+
+        public string AccrualDebitAccountCodeMinor { get; protected set; }
+
+        public string AccrualDebitAccountCodeMinorName { get; protected set; }
+
+        public string AccrualDebitAccountCodeString { get; protected set; }
+
+        public AccountCodeModel AmortizationCreditAccountCode { get; set; }
+
+        public string AmortizationCreditAccountCodeCompany { get; set; }
+
+        public string AmortizationCreditAccountCodeCompanyName { get; set; }
+
+        public string AmortizationCreditAccountCodeCostCenter { get; set; }
+
+        public string AmortizationCreditAccountCodeCostCenterName { get; set; }
+
+        public string AmortizationCreditAccountCodeFerc { get; set; }
+
+        public string AmortizationCreditAccountCodeFercName { get; set; }
+
+        public long? AmortizationCreditAccountCodeId { get; set; }
+
+        public string AmortizationCreditAccountCodeInterCompany { get; set; }
+
+        public string AmortizationCreditAccountCodeInterCompanyName { get; set; }
+
+        public string AmortizationCreditAccountCodeMajor { get; set; }
+
+        public string AmortizationCreditAccountCodeMajorName { get; set; }
+
+        public string AmortizationCreditAccountCodeMinor { get; set; }
+
+        public string AmortizationCreditAccountCodeMinorName { get; set; }
+
+        public string AmortizationCreditAccountCodeString { get; set; }
+
+        public AccountCodeModel AmortizationDebitAccountCode { get; set; }
+
+        public string AmortizationDebitAccountCodeCompany { get; set; }
+
+        public string AmortizationDebitAccountCodeCompanyName { get; set; }
+
+        public string AmortizationDebitAccountCodeCostCenter { get; set; }
+
+        public string AmortizationDebitAccountCodeCostCenterName { get; set; }
+
+        public string AmortizationDebitAccountCodeFerc { get; set; }
+
+        public string AmortizationDebitAccountCodeFercName { get; set; }
+
+        public long? AmortizationDebitAccountCodeId { get; set; }
+
+        public string AmortizationDebitAccountCodeInterCompany { get; set; }
+
+        public string AmortizationDebitAccountCodeInterCompanyName { get; set; }
+
+        public string AmortizationDebitAccountCodeMajor { get; set; }
+
+        public string AmortizationDebitAccountCodeMajorName { get; set; }
+
+        public string AmortizationDebitAccountCodeMinor { get; set; }
+
+        public string AmortizationDebitAccountCodeMinorName { get; set; }
+
+        public string AmortizationDebitAccountCodeString { get; set; }
+
+        public IEnumerable<SimpleType<long>> BillingCompanies { get; set; }
+
+        public long? BillingCompanyId { get; set; }
+
+        public string BillingCompanyName { get; set; }
+
+        public int BillingRecordCount { get; protected set; }
+
+        public int InventoryValutionRecordCount { get; protected set; }
+
+        public string BillingRecordType { get; set; }
+
+        public short BillingRecordTypeId { get; set; } = (short)Estream.Accounting.Common.Enums.BillingRecordType.Revenue;
+
+        public IEnumerable<SimpleType<long>> BillingRecordTypes { get; set; }
+
+        public string ChildFacilityName { get; set; }
+
+        public long? CommercialAssetId { get; set; }
+
+        public string CommercialAssetName { get; set; }
+
+        public IEnumerable<SimpleType<long>> CommercialAssets { get; set; }
+
+        public IEnumerable<SimpleType<long>> Component { get; set; }
+
+        public long? ComponentId { get; set; }
+
+        public string ComponentName { get; set; }
+
+        public AccountCodeModel CreditAccountCode { get; set; }
+
+        public string CreditAccountCodeCompany { get; protected set; }
+
+        public string CreditAccountCodeCompanyName { get; protected set; }
+
+        public string CreditAccountCodeCostCenter { get; protected set; }
+
+        public string CreditAccountCodeCostCenterName { get; protected set; }
+
+        public string CreditAccountCodeFerc { get; protected set; }
+
+        public string CreditAccountCodeFercName { get; protected set; }
+
+        public long? CreditAccountCodeId { get; set; }
+
+        public string CreditAccountCodeInterCompany { get; protected set; }
+
+        public string CreditAccountCodeInterCompanyName { get; protected set; }
+
+        public string CreditAccountCodeMajor { get; protected set; }
+
+        public string CreditAccountCodeMajorName { get; protected set; }
+
+        public string CreditAccountCodeMinor { get; protected set; }
+
+        public string CreditAccountCodeMinorName { get; protected set; }
+
+        public string CreditAccountCodeString { get; protected set; }
+
+        public AccountCodeModel DebitAccountCode { get; set; }
+
+        public string DebitAccountCodeCompany { get; protected set; }
+
+        public string DebitAccountCodeCompanyName { get; protected set; }
+
+        public string DebitAccountCodeCostCenter { get; protected set; }
+
+        public string DebitAccountCodeCostCenterName { get; protected set; }
+
+        public string DebitAccountCodeFerc { get; protected set; }
+
+        public string DebitAccountCodeFercName { get; protected set; }
+
+        public long? DebitAccountCodeId { get; set; }
+
+        public string DebitAccountCodeInterCompany { get; protected set; }
+
+        public string DebitAccountCodeInterCompanyName { get; protected set; }
+
+        public string DebitAccountCodeMajor { get; protected set; }
+
+        public string DebitAccountCodeMajorName { get; protected set; }
+
+        public string DebitAccountCodeMinor { get; protected set; }
+
+        public string DebitAccountCodeMinorName { get; protected set; }
+
+        public string DebitAccountCodeString { get; protected set; }
+
+        public AccountCodeModel DeferralCreditAccountCode { get; set; }
+
+        public string DeferralCreditAccountCodeCompany { get; protected set; }
+
+        public string DeferralCreditAccountCodeCompanyName { get; protected set; }
+
+        public string DeferralCreditAccountCodeCostCenter { get; protected set; }
+
+        public string DeferralCreditAccountCodeCostCenterName { get; protected set; }
+
+        public string DeferralCreditAccountCodeFerc { get; protected set; }
+
+        public string DeferralCreditAccountCodeFercName { get; protected set; }
+
+        public long? DeferralCreditAccountCodeId { get; set; }
+
+        public string DeferralCreditAccountCodeInterCompany { get; protected set; }
+
+        public string DeferralCreditAccountCodeInterCompanyName { get; protected set; }
+
+        public string DeferralCreditAccountCodeMajor { get; protected set; }
+
+        public string DeferralCreditAccountCodeMajorName { get; protected set; }
+
+        public string DeferralCreditAccountCodeMinor { get; protected set; }
+
+        public string DeferralCreditAccountCodeMinorName { get; protected set; }
+
+        public string DeferralCreditAccountCodeString { get; protected set; }
+
+        public AccountCodeModel DeferralDebitAccountCode { get; set; }
+
+        public string DeferralDebitAccountCodeCompany { get; protected set; }
+
+        public string DeferralDebitAccountCodeCompanyName { get; protected set; }
+
+        public string DeferralDebitAccountCodeCostCenter { get; protected set; }
+
+        public string DeferralDebitAccountCodeCostCenterName { get; protected set; }
+
+        public string DeferralDebitAccountCodeFerc { get; protected set; }
+
+        public string DeferralDebitAccountCodeFercName { get; protected set; }
+
+        public long? DeferralDebitAccountCodeId { get; set; }
+
+        public string DeferralDebitAccountCodeInterCompany { get; protected set; }
+
+        public string DeferralDebitAccountCodeInterCompanyName { get; protected set; }
+
+        public string DeferralDebitAccountCodeMajor { get; protected set; }
+
+        public string DeferralDebitAccountCodeMajorName { get; protected set; }
+
+        public string DeferralDebitAccountCodeMinor { get; protected set; }
+
+        public string DeferralDebitAccountCodeMinorName { get; protected set; }
+
+        public string DeferralDebitAccountCodeString { get; protected set; }
+
+        public string Description { get; set; }
+
+        public string DeterminationRuleStatusClass =>
+            IsActive
+                ? "active"
+                : "inactive";
+
+        public string DistCustomerAccName { get; set; }
+
+        public long? DistCustomerAccNameId { get; set; }
+
+        public IEnumerable<SimpleType<long>> DistributionCustomerAccount { get; set; }
+
+        public long? DistributionCustomerAccountId { get; set; }
+
+        public bool EnableComponent { get; set; }
+
+        public bool EnableDistributionCustomerAccount { get; set; }
+
+        public bool EnableFacilityGroup { get; set; }
+
+        public bool EnableInventoryTicketType { get; set; }
+
+        public bool EnableOverShort { get; set; }
+
+        public bool EnableServiceFee { get; set; } = true;
+
+        public bool EnableValuationType { get; set; }
+
+        public Dictionary<long, string> Estimate { get; set; }
+
+        public short? Estimated { get; set; }
+
+        public IEnumerable<SimpleType<long>> Facilities { get; set; }
+
+        public IEnumerable<SimpleType<long>> FacilitiesByParent { get; set; }
+
+        public IEnumerable<SimpleType<long>> FacilityGroup { get; set; }
+
+        public long? FacilityGroupId { get; set; }
+
+        public string FacilityGroupName { get; set; }
+
+        public long? FacilityId { get; set; }
+
+        public string FacilityName { get; set; }
+
+        public IEnumerable<SimpleType<long>> InterIntraOptions { get; protected set; }
+
+        public short? GainLossSubTypeId { get; set; }
+
+        public IEnumerable<SimpleType<long>> GainLossTypeSubType { get; set; }
+
+        public long? GainLossTypeSubTypeId { get; set; }
+
+        public bool HasBillingRecords => BillingRecordCount > 0;
+
+        public long Id { get; set; }
+
+        public IEnumerable<SimpleType<long>> InterCompanies { get; set; }
+
+        public long? InterCompanyId { get; set; }
+
+        public string InterCompanyName { get; set; }
+
+        public long? InventoryProductGroupId { get; set; }
+
+        public string InventoryProductGroupName { get; set; }
+
+        public IEnumerable<SimpleType<long>> InventoryProductGroups { get; set; }
+
+        public InterIntra InterIntra { get; set; }
+
+        public string InterIntraCode => InterIntra.GetEnumDescription();
+
+        public string InventoryTicketTypeName { get; set; }
+
+        public IEnumerable<SimpleType<long>> InventoryValuationType { get; set; }
+
+        public short? InventoryValuationTypeId { get; set; }
+
+        public long? InventoryValuationTypeName { get; set; }
+
+        public bool IsActive { get; set; } = true;
+
+        public bool IsElementEnabledByDefault => false;
+
+        public bool IsPrepaid { get; set; }
+
+        public bool IsReClass { get; set; }
+
+        public Dictionary<long, string> JointDevision { get; set; }
+
+        public short? JointDivision { get; set; }
+
+        public string LedgerTypeCode { get; set; }
+
+        public string LedgerTypeDescription { get; set; }
+
+        public short? LedgerTypeId { get; set; }
+
+        public IEnumerable<SimpleType<long>> LedgerTypes { get; set; }
+
+        public IEnumerable<SimpleType<long>> OverShortCategories { get; set; }
+
+        public short? OverShortCategoryId { get; set; }
+
+        public string OverShortCategoryName { get; set; }
+
+        public IEnumerable<SimpleType<long>> PhysicalAssets { get; set; }
+
+        public long? ProductId { get; set; }
+
+        public string ProductName { get; set; }
+
+        public IEnumerable<SimpleType<long>> Products { get; set; }
+
+        public List<string> ProductsForProductGroup { get; set; }
+
+        public string ProductShortNames =>
+            ProductsForProductGroup != null
+                ? ProductsForProductGroup?.ToDelimitedString(Environment.NewLine)
+                : string.Empty;
+
+        public AccountCodeModel ReClassCreditAccountCode { get; set; }
+
+        public string ReClassCreditAccountCodeCompany { get; set; }
+
+        public string ReClassCreditAccountCodeCompanyName { get; set; }
+
+        public string ReClassCreditAccountCodeCostCenter { get; set; }
+
+        public string ReClassCreditAccountCodeCostCenterName { get; set; }
+
+        public string ReClassCreditAccountCodeFerc { get; set; }
+
+        public string ReClassCreditAccountCodeFercName { get; set; }
+
+        public long? ReClassCreditAccountCodeId { get; set; }
+
+        public string ReClassCreditAccountCodeInterCompany { get; set; }
+
+        public string ReClassCreditAccountCodeInterCompanyName { get; set; }
+
+        public string ReClassCreditAccountCodeMajor { get; set; }
+
+        public string ReClassCreditAccountCodeMajorName { get; set; }
+
+        public string ReClassCreditAccountCodeMinor { get; set; }
+
+        public string ReClassCreditAccountCodeMinorName { get; set; }
+
+        public string ReClassCreditAccountCodeString { get; set; }
+
+        public AccountCodeModel ReClassDebitAccountCode { get; set; }
+
+        public string ReClassDebitAccountCodeCompany { get; set; }
+
+        public string ReClassDebitAccountCodeCompanyName { get; set; }
+
+        public string ReClassDebitAccountCodeCostCenter { get; set; }
+
+        public string ReClassDebitAccountCodeCostCenterName { get; set; }
+
+        public string ReClassDebitAccountCodeFerc { get; set; }
+
+        public string ReClassDebitAccountCodeFercName { get; set; }
+
+        public long? ReClassDebitAccountCodeId { get; set; }
+
+        public string ReClassDebitAccountCodeInterCompany { get; set; }
+
+        public string ReClassDebitAccountCodeInterCompanyName { get; set; }
+
+        public string ReClassDebitAccountCodeMajor { get; set; }
+
+        public string ReClassDebitAccountCodeMajorName { get; set; }
+
+        public string ReClassDebitAccountCodeMinor { get; set; }
+
+        public string ReClassDebitAccountCodeMinorName { get; set; }
+
+        public string ReClassDebitAccountCodeString { get; set; }
+
+        public string SelectedEstimated { get; set; }
+
+        public string SelectedJointDevision { get; set; }
+
+        public long? ServiceFeeId { get; set; }
+
+        public string ServiceFeeName { get; set; }
+
+        public IEnumerable<SimpleType<long>> ServiceFees { get; set; }
+
+        public string StatusDescription =>
+            IsActive
+                ? "Active"
+                : "Inactive";
+
+        public IEnumerable<long> TransportationFeeTypes { get; set; }
+
+        public string ValuationName { get; set; }
+
+        public AccountCodeDeterminationRuleViewModel CopyViewModel(IRepository repo, IProvideSimpleData simpleDataProvider, AccountCodeDeterminationRuleViewModel viewModel)
+        {
+            BuildViewModel(repo, simpleDataProvider, viewModel);
+
+            return viewModel;
+        }
+
+        public AccountCodeDeterminationRuleViewModel CreateViewModel(IRepository repo, IProvideSimpleData simpleDataProvider, AccountCodeDeterminationRuleViewModel accountCodeDeterminationRuleViewModel = null)
+        {
+            var viewModel = accountCodeDeterminationRuleViewModel ?? new AccountCodeDeterminationRuleViewModel();
+            BuildViewModel(repo, simpleDataProvider, viewModel);
+
+            return viewModel;
+        }
+
+        public AccountCodeDeterminationRuleViewModel EditViewModel(IRepository repo, IProvideSimpleData simpleDataProvider, AccountCodeDeterminationRuleViewModel viewModel)
+        {
+            BuildViewModel(repo, simpleDataProvider, viewModel);
+
+            return viewModel;
+        }
+
+        public string FormatCriteria(string value)
+        {
+            return string.IsNullOrEmpty(value)
+                ? "All"
+                : value;
+        }
+
+        public string FormatCriteriaForComponent(string value, short billingRecordTypeId)
+        {
+            return billingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory
+                ? string.IsNullOrEmpty(value)
+                    ? string.Empty
+                    : value == "All"
+                        ? "All"
+                        : value
+                : string.Empty;
+        }
+
+        public string FormatCriteriaForDistributionCustomer(string value, short billingRecordTypeId)
+        {
+            return JointDivision == (short)DeterminationRuleType.Yes
+                ? string.IsNullOrEmpty(value)
+                    ? "All"
+                    : value
+                : string.Empty;
+        }
+
+        public string FormatCriteriaForInventory(string value, short billingRecordTypeId)
+        {
+            return billingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory
+                ? string.IsNullOrEmpty(value)
+                    ? "All"
+                    : value
+                : string.Empty;
+        }
+
+        public string FormatCriteriaForNonInventory(string value, short billingRecordTypeId)
+        {
+            return billingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory
+                ? string.Empty
+                : string.IsNullOrEmpty(value)
+                    ? "All"
+                    : value;
+        }
+
+        public string FormatInventorySubTicketType(long? invTicketSubTypeId, short billingRecordTypeId)
+        {
+            if (billingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                if (!invTicketSubTypeId.HasValue || invTicketSubTypeId.Value == 0)
+                {
+                    return "All";
+                }
+
+                var enumValue = (InventoryTicketSubTypeEnum)invTicketSubTypeId.Value;
+
+                return enumValue.GetEnumDescription();
+            }
+
+            return string.Empty;
+        }
+
+        public string FormatPrepaid(bool value)
+        {
+            return BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory
+                ? string.Empty
+                : value
+                    ? "Yes"
+                    : "No";
+        }
+
+        public string FormatProduct(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                if (InventoryProductGroupName.IsNotNullOrEmpty())
+                {
+                    return string.Empty;
+                }
+
+                return "All";
+            }
+
+            return value;
+        }
+
+        public string FormatProductGroup(string value)
+        {
+            return string.IsNullOrEmpty(value)
+                ? string.Empty
+                : value;
+        }
+
+        public string FormatServiceFee(string value, short billingRecordTypeId)
+        {
+            return billingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory
+                ? string.Empty
+                : string.IsNullOrEmpty(value)
+                    ? "All"
+                    : value;
+        }
+
+        public string FormatValutionType(long? inventoryValuationTypeId, short billingRecordTypeId)
+        {
+            if (billingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                if (!inventoryValuationTypeId.HasValue || inventoryValuationTypeId.Value == 0)
+                {
+                    return "All";
+                }
+
+                var enumValue = (InventoryValuationTypeEnum)inventoryValuationTypeId.Value;
+
+                return enumValue.GetEnumDescription();
+            }
+
+            return string.Empty;
+        }
+
+        public string FormatYesNo(bool value)
+        {
+            return value
+                ? "Yes"
+                : "No";
+        }
+
+        public string FormatYesNoAll(short? value)
+        {
+            if (!value.HasValue)
+            {
+                return DeterminationRuleType.All.GetEnumDescription();
+            }
+
+            var enumValue = (DeterminationRuleType)value.Value;
+
+            return enumValue.GetEnumDescription();
+        }
+
+        public CreateDeterminationRuleTransition GetCreateDeterminationRuleTransition()
+        {
+            if (BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                FacilityId = null;
+                InterCompanyId = null;
+                ServiceFeeId = null;
+                DistributionCustomerAccountId = null;
+                InterIntra = InterIntra.Intra;
+                JointDivision = null;
+                IsPrepaid = false;
+            }
+            else
+            {
+                FacilityGroupId = null;
+                ComponentId = null;
+                InventoryValuationTypeId = null;
+                GainLossSubTypeId = null;
+            }
+
+            return new CreateDeterminationRuleTransition
+            {
+                Id = Id,
+                AccrualCreditAccountCodeId = AccrualCreditAccountCodeId,
+                AccrualDebitAccountCodeId = AccrualDebitAccountCodeId,
+                AssetId = CommercialAssetId,
+                BillingCompanyId = (long)BillingCompanyId,
+                DistributionCustomerAccountId = DistributionCustomerAccountId,
+                BillingRecordTypeId = BillingRecordTypeId,
+                CreditAccountCodeId = CreditAccountCodeId,
+                DebitAccountCodeId = DebitAccountCodeId,
+                DeferralCreditAccountCodeId = DeferralCreditAccountCodeId,
+                DeferralDebitAccountCodeId = DeferralDebitAccountCodeId,
+                AmortizationCreditAccountCodeId = AmortizationCreditAccountCodeId,
+                AmortiztionDebitAccountCodeId = AmortizationDebitAccountCodeId,
+                ReClassDebitAccountCodeId = ReClassDebitAccountCodeId,
+                ReClassCreditAccountCodeId = ReClassCreditAccountCodeId,
+                Description = Description,
+                InterCompanyId = InterCompanyId,
+                InterIntra = InterIntra,
+                IsActive = IsActive,
+                IsEstimated = ConvertToBool(Estimated),
+                IsJointDivision = ConvertToBool(JointDivision),
+                IsPrepaid = IsPrepaid,
+                IsReclass = IsReClass,
+                LedgerTypeId = (short)LedgerTypeId,
+                PhysicalAssetId = FacilityId,
+                PhysicalAssetGroupId = FacilityGroupId,
+                ProductId = ProductId,
+                ComponentId = ComponentId,
+                InventoryValuationTypeId = InventoryValuationTypeId,
+                InventoryTicketSubTypeId = GainLossSubTypeId,
+                ServiceFeeTypeId = ServiceFeeId,
+                TicketCategoryId = OverShortCategoryId,
+                InventoryProductGroupId = InventoryProductGroupId
+            };
+        }
+
+        public UpdateDeterminationRuleTransition GetUpdateDeterminationRuleTransition()
+        {
+            if (BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                FacilityId = null;
+                InterCompanyId = null;
+                ServiceFeeId = null;
+                var componentId = ComponentId;
+            }
+            else
+            {
+                FacilityGroupId = null;
+                ComponentId = null;
+                InventoryValuationTypeId = null;
+                GainLossSubTypeId = null;
+            }
+
+            return new UpdateDeterminationRuleTransition
+            {
+                Id = Id,
+                AccrualCreditAccountCodeId = AccrualCreditAccountCodeId,
+                AccrualDebitAccountCodeId = AccrualDebitAccountCodeId,
+                AssetId = CommercialAssetId,
+                BillingCompanyId = (long)BillingCompanyId,
+                DistributionCustomerAccountId = DistributionCustomerAccountId,
+                BillingRecordTypeId = BillingRecordTypeId,
+                CreditAccountCodeId = CreditAccountCodeId,
+                DebitAccountCodeId = DebitAccountCodeId,
+                DeferralCreditAccountCodeId = DeferralCreditAccountCodeId,
+                DeferralDebitAccountCodeId = DeferralDebitAccountCodeId,
+                AmortizationCreditAccountCodeId = AmortizationCreditAccountCodeId,
+                AmortizationDebitAccountCodeId = AmortizationDebitAccountCodeId,
+                ReClassCreditAccountCodeId = ReClassCreditAccountCodeId,
+                ReClassDebitAccountCodeId = ReClassDebitAccountCodeId,
+                Description = Description,
+                InterCompanyId = InterCompanyId,
+                InterIntra = InterIntra,
+                IsActive = IsActive,
+                IsEstimated = ConvertToBool(Estimated),
+                IsJointDivision = ConvertToBool(JointDivision),
+                IsPrepaid = IsPrepaid,
+                IsReclass = IsReClass,
+                LedgerTypeId = (short)LedgerTypeId,
+                PhysicalAssetId = FacilityId,
+                ProductId = ProductId,
+                ServiceFeeTypeId = ServiceFeeId,
+                TicketCategoryId = OverShortCategoryId,
+                PhysicalAssetGroupId = FacilityGroupId,
+                ComponentId = ComponentId,
+                InventoryValuationTypeId = InventoryValuationTypeId,
+                InventoryTicketSubTypeId = GainLossSubTypeId,
+                InventoryProductGroupId = InventoryProductGroupId
+            };
+        }
+
+        public void InitializeAccountCodes()
+        {
+            DebitAccountCode = new AccountCodeModel();
+            CreditAccountCode = new AccountCodeModel();
+            AccrualDebitAccountCode = new AccountCodeModel();
+            AccrualCreditAccountCode = new AccountCodeModel();
+            DeferralDebitAccountCode = new AccountCodeModel();
+            DeferralCreditAccountCode = new AccountCodeModel();
+            AmortizationDebitAccountCode = new AccountCodeModel();
+            AmortizationCreditAccountCode = new AccountCodeModel();
+            ReClassCreditAccountCode = new AccountCodeModel();
+            ReClassDebitAccountCode = new AccountCodeModel();
+        }
+
+        public void LoadFrom(IRepository repository)
+        {
+            var allSelectItem = new SimpleType<long> { Id = 0, Name = "All" };
+            var interCompanies = new List<SimpleType<long>> { allSelectItem };
+
+            HasEditActionEntitlement = repository.HasAction(ResourceArea.Accounting, typeof(DeterminationRule), ResourceAction.Edit);
+            HasDeleteActionEntitlement = repository.HasAction(ResourceArea.Accounting, typeof(DeterminationRule), ResourceAction.Delete);
+            HasCreateActionEntitlement = repository.HasAction(ResourceArea.Accounting, typeof(DeterminationRule), ResourceAction.Create);
+            interCompanies.AddRange(repository.Find(new DropDownDataForRelatedPartiesViaAssetGroupAssociation()));
+            InterCompanies = interCompanies;
+            if (InventoryProductGroupId != null)
+            {
+                ProductsForProductGroup = repository.Find(new GetInventoryProductShortNameByProductGroupId(InventoryProductGroupId.Value)).ToList();
+            }
+
+            IEnumerable<ServiceFeeType> allFees;
+            using (new UnsecuredQueryScope("Reviewed and Approved by the business to be Unsecured"))
+            {
+                allFees = repository.Find(new AllServiceFeeTypes()).ToList();
+            }
+            var serviceFees = new List<SimpleType<long>> { allSelectItem };
+            serviceFees.AddRange(allFees.Select(x => new SimpleType<long> { Id = x.Id, Name = x.Code }));
+            ServiceFees = serviceFees;
+            TransportationFeeTypes = allFees.Where(x => x.IsIncludedOnTransportationReports).Select(x => x.Id);
+        }
+
+        public override void LoadFromSimpleData(IProvideSimpleData simpleDataProvider)
+        {
+            BillingRecordTypes = simpleDataProvider.GetSimpleData(SimpleDataTypes.BillingRecordType);
+            BillingCompanies = simpleDataProvider.GetSimpleData(SimpleDataTypes.BillingCompany);
+            CommercialAssets = simpleDataProvider.GetSimpleData(SimpleDataTypes.Asset);
+            Facilities = simpleDataProvider.GetSimpleData(SimpleDataTypes.FacilityByCommercialAsset);
+            PhysicalAssets = simpleDataProvider.GetSimpleData(SimpleDataTypes.FacilityByBillingCompany);
+            Component = simpleDataProvider.GetSimpleData(SimpleDataTypes.Component);
+            LedgerTypes = simpleDataProvider.GetSimpleData(SimpleDataTypes.SettlementType);
+            FacilitiesByParent = simpleDataProvider.GetSimpleData(SimpleDataTypes.FacilitiesByGroup);
+            InterIntraOptions = GetEnums<InterIntra>();
+            JointDevision = GetEnumValues.Of<DeterminationRuleType>().Select(item => new { Id = (long)item, Value = item.GetEnumDescription() })
+                                         .OrderBy(item => item.Id).ToDictionary(d => d.Id, d => d.Value);
+            Estimate = GetEnumValues.Of<DeterminationRuleType>().Select(item => new { Id = (long)item, Value = item.GetEnumDescription() })
+                                    .OrderBy(item => item.Id).ToDictionary(d => d.Id, d => d.Value);
+
+            var allSelectItem = new SimpleType<long> { Id = 0, Name = "All" };
+
+            var overShortCategories = new List<SimpleType<long>> { allSelectItem };
+            var facilityGroup = new List<SimpleType<long>> { allSelectItem };
+            var gainLossType = new List<SimpleType<long>> { allSelectItem };
+            var inventoryValuationType = new List<SimpleType<long>> { allSelectItem };
+            var distributioncustomeraccount = new List<SimpleType<long>> { allSelectItem };
+
+            overShortCategories.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.TicketCategory));
+            facilityGroup.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.FacilitiesByParent));
+            gainLossType.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.InventoryTicketSubType));
+            inventoryValuationType.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.InventoryValuationType));
+            distributioncustomeraccount.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.CustomerAccount));
+
+            OverShortCategories = overShortCategories;
+            FacilityGroup = facilityGroup;
+            InventoryValuationType = inventoryValuationType;
+            GainLossTypeSubType = gainLossType;
+            DistributionCustomerAccount = distributioncustomeraccount;
+            var productListItemForAll = new SimpleType<long> { Id = 0, Name = "All", DataBag = new { BillingCompanyIds = new List<long> { 0 }, CommercialAssetIds = new List<long> { 0 }, PhysicalAssetIds = new List<long> { 0 } } };
+            var productListItemForNone = new SimpleType<long> { Id = -1, Name = string.Empty, DataBag = new { BillingCompanyIds = new List<long> { 0 }, CommercialAssetIds = new List<long> { 0 }, PhysicalAssetIds = new List<long> { 0 } } };
+            var products = new List<SimpleType<long>>();
+            products.Add(productListItemForAll);
+            products.Add(productListItemForNone);
+            products.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.ProductForAccountCodeDeterminationRule));
+            Products = products;
+            var inventoryProductGroupListItemForNone = new SimpleType<long> { Id = -1, Name = string.Empty, DataBag = new { AssetGroupIds = new List<long?>() } };
+            var inventoryProductGroups = new List<SimpleType<long>>();
+            inventoryProductGroups.Add(inventoryProductGroupListItemForNone);
+            inventoryProductGroups.AddRange(simpleDataProvider.GetSimpleData(SimpleDataTypes.InventoryProductGroups));
+            InventoryProductGroups = inventoryProductGroups;
+        }
+
+        public void Verify()
+        {
+            var verifications = new List<Verification>();
+            var viewModel = this;
+
+            Verifier.Verify(new Verification(viewModel.BillingRecordTypeId > 0, "BillingRecordTypeNotSelected", "Billing Record Type is required."));
+            verifications.Add(new Verification(viewModel.BillingCompanyId > 0, "BillingCompanyTypeNotSelected", "Billing Company is required."));
+            verifications.Add(new Verification(viewModel.CommercialAssetId >= 0, "CommercialAssetNotSelected", "Commercial Asset is required."));
+            verifications.Add(new Verification((viewModel.ProductId != null && viewModel.InventoryProductGroupId == null) || (viewModel.ProductId == null && viewModel.InventoryProductGroupId != null), "ProductOrProductGroupNotSelected", "Product or Product Group is required."));
+
+            if (viewModel.BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.Inventory)
+            {
+                verifications.Add(new Verification(viewModel.FacilityGroupId >= 0, "FacilityGroupNotSelected", "Facility Group is required."));
+                if (viewModel.ProductId > 0 && viewModel.EnableComponent)
+                {
+                    verifications.Add(new Verification(viewModel.ComponentId >= 0, "ComponentNotSelected", "Component is required."));
+                }
+
+                verifications.Add(new Verification(viewModel.InventoryValuationTypeId >= 0, "ValuationTypeNotSelected", "Valuation Type is required."));
+                verifications.Add(new Verification(viewModel.GainLossSubTypeId >= 0, "GainLossSubTypeNotSelected", "Inventory Ticket Type – Subtype is required."));
+                viewModel.IsPrepaid = false;
+            }
+            else
+            {
+                verifications.Add(new Verification(viewModel.FacilityId >= 0, "FacilityNotSelected", "Facility is required."));
+                verifications.Add(new Verification(viewModel.InterCompanyId >= 0, "InterCompanyNotSelected", "Inter Company / Related Party is required."));
+                verifications.Add(new Verification(viewModel.EnableServiceFee && viewModel.ServiceFeeId >= 0, "ServiceFeeTypeNotSelected", "Service Fee Type is required."));
+            }
+
+            if (viewModel.BillingRecordTypeId == (short)Estream.Accounting.Common.Enums.BillingRecordType.JointRevenueDeduction)
+            {
+                verifications.Add(new Verification(viewModel.LedgerTypeId > 0, "SettlementTypeNotSelected", "Settlement Type is required."));
+            }
+
+            if (viewModel.JointDivision == (short)DeterminationRuleType.Yes)
+            {
+                verifications.Add(new Verification(viewModel.DistributionCustomerAccountId >= 0, "DistributionCustomerAccountNotSelected", "Distribution Customer Account is required."));
+            }
+
+            verifications.Add(new Verification(viewModel.DebitAccountCodeId > 0, "DebitAccountCodeNotSelected", "Debit Account Code is required."));
+            verifications.Add(new Verification(viewModel.CreditAccountCodeId > 0, "CreditAccountCodeNotSelected", "Credit Account Code is required."));
+
+            if (viewModel.IsPrepaid)
+            {
+                verifications.Add(new Verification(viewModel.AmortizationDebitAccountCodeId > 0, "AmortizationDebitAccountCodeNotSelected", "An Amortization Debit Account Code is required."));
+                verifications.Add(new Verification(viewModel.AmortizationCreditAccountCodeId > 0, "AmortizationCreditAccountCodeNotSelected", "An Amortization Credit Account Code is required."));
+            }
+
+            if (viewModel.IsReClass && viewModel.BillingRecordTypeId != (short)Estream.Accounting.Common.Enums.BillingRecordType.JointRevenueDeduction)
+            {
+                verifications.Add(new Verification(viewModel.ReClassDebitAccountCodeId > 0, "ReClassDebitAccountCodeNotSelected", "ReClass Debit Account Code is required."));
+                verifications.Add(new Verification(viewModel.ReClassCreditAccountCodeId > 0, "ReClassCreditAccountCodeNotSelected", "ReClass Credit Account Code is required."));
+            }
+
+            Verifier.Verify(verifications);
+        }
+
+        public IEnumerable<SimpleType<long>> GetEnums<T>(Func<Enum, string> descriptionGetter = null, bool distinctNames = true)
+        {
+            if (!typeof(T).IsEnum)
+            {
+                throw new ArgumentException("T must be an Enum");
+            }
+
+            descriptionGetter = descriptionGetter ?? (e => e.GetEnumDescription());
+
+            var valsWithDescriptions = Enum.GetValues(typeof(T)).Cast<T>().Select(p => new SimpleType<long>
+            {
+                Id = Convert.ToInt32(p),
+                Name = descriptionGetter(p as Enum)
+            }).OrderBy(x => x.Name);
+
+            return distinctNames ? valsWithDescriptions.DistinctBy(x => x.Name) : valsWithDescriptions;
+        }
+
+        private static void BuildViewModel(IRepository repo, IProvideSimpleData simpleDataProvider, AccountCodeDeterminationRuleViewModel viewModel)
+        {
+            if (!viewModel.BillingCompanyId.HasValue)
+            {
+                viewModel.InitializeAccountCodes();
+            }
+
+            viewModel.LoadFromSimpleData(simpleDataProvider);
+            viewModel.LoadFrom(repo);
+
+            viewModel.AccrualCreditAccountCode = viewModel.AccrualCreditAccountCode ?? new AccountCodeModel();
+            viewModel.AccrualDebitAccountCode = viewModel.AccrualDebitAccountCode ?? new AccountCodeModel();
+            viewModel.CreditAccountCode = viewModel.CreditAccountCode ?? new AccountCodeModel();
+            viewModel.DebitAccountCode = viewModel.DebitAccountCode ?? new AccountCodeModel();
+            viewModel.DeferralCreditAccountCode = viewModel.DeferralCreditAccountCode ?? new AccountCodeModel();
+            viewModel.DeferralDebitAccountCode = viewModel.DeferralDebitAccountCode ?? new AccountCodeModel();
+            viewModel.AmortizationCreditAccountCode = viewModel.AmortizationCreditAccountCode ?? new AccountCodeModel();
+            viewModel.AmortizationDebitAccountCode = viewModel.AmortizationDebitAccountCode ?? new AccountCodeModel();
+            viewModel.ReClassCreditAccountCode = viewModel.ReClassCreditAccountCode ?? new AccountCodeModel();
+            viewModel.ReClassDebitAccountCode = viewModel.ReClassDebitAccountCode ?? new AccountCodeModel();
+        }
+
+        private bool? ConvertToBool(short? enumValue)
+        {
+            if (!enumValue.HasValue || enumValue == (short)DeterminationRuleType.All)
+            {
+                return null;
+            }
+
+            return enumValue == (short)DeterminationRuleType.Yes;
+        }
+
+        private short? ConvertToEnum(bool? flag)
+        {
+            if (!flag.HasValue)
+            {
+                return (short)DeterminationRuleType.All;
+            }
+
+            return flag.Value
+                ? (short)DeterminationRuleType.Yes
+                : (short)DeterminationRuleType.No;
+        }
+    }
+}
