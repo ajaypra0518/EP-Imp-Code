@@ -1,0 +1,87 @@
+// <copyright file="DateExtensions.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+
+namespace Estream.Common
+{
+    public static class DateExtensions
+    {
+        public static DateTime EndOfDay(this DateTime date)
+        {
+            return new DateTime(date.Year, date.Month, date.Day, 23, 59, 59, 999);
+        }
+
+        public static DateTime StartOfDay(this DateTime date)
+        {
+            return new DateTime(date.Year, date.Month, date.Day, 0, 0, 0, 0);
+        }
+
+        public static DateTime EndOfMonth(this DateTime date)
+        {
+            return new DateTime(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month));
+        }
+
+        public static DateTime? EndOfMonth(this DateTime? date)
+        {
+            return date.HasValue ? date.Value.EndOfMonth() : date;
+        }
+
+        public static DateTime StartOfMonth(this DateTime date)
+        {
+            return new DateTime(date.Year, date.Month, 1);
+        }
+
+        public static DateTime? EndOfDay(this DateTime? date)
+        {
+            return date?.EndOfDay();
+        }
+
+        public static bool IsSameYearAndMonthAs(this DateTime first, DateTime second)
+        {
+            return first.Month == second.Month && first.Year == second.Year;
+        }
+
+        public static DateTime ToStartOfBusinessDay(this DateTime date)
+        {
+            // Note: This 7AM start is only for Dixie and MAPL, in future we will need to make this from configuration.
+            // Start of business day at 7 AM
+            return date.StartOfDay().AddHours(7);
+        }
+
+        public static bool IsPreviousMonth(this DateTime dateTime, DateTime followingMonthDateTime)
+        {
+            return ((followingMonthDateTime.Year - dateTime.Year) * 12) + followingMonthDateTime.Month - dateTime.Month > 0;
+        }
+
+        public static bool IsNextMonth(this DateTime dateTime, DateTime previousMonthDateTime)
+        {
+            return ((dateTime.Year - previousMonthDateTime.Year) * 12) + dateTime.Month - previousMonthDateTime.Month > 0;
+        }
+
+        public static bool IsSameMonth(this DateTime dateTime, DateTime sameMonthDateTime)
+        {
+            return ((dateTime.Year - sameMonthDateTime.Year) * 12) + dateTime.Month - sameMonthDateTime.Month == 0;
+        }
+
+        public static int TotalMonths(this DateTime dateTime, DateTime sameMonthDateTime)
+        {
+            return Math.Abs(((dateTime.Year - sameMonthDateTime.Year) * 12) + dateTime.Month - sameMonthDateTime.Month);
+        }
+
+        public static DateTime Min(this DateTime first, DateTime second)
+        {
+            return first < second ? first : second;
+        }
+
+        public static DateTime Max(this DateTime first, DateTime second)
+        {
+            return first > second ? first : second;
+        }
+    }
+}

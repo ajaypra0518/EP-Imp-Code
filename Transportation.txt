@@ -1,0 +1,406 @@
+// <copyright file="Transportation.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Estream.Common;
+using Estream.Common.CrossDomainEvents.Contracts.Fee;
+using Estream.Common.CrossDomainEvents.Contracts.Transportation;
+using Estream.Common.DocumentStorage;
+using Estream.Contracts.Common.Contracts.Entities;
+using Estream.Contracts.Common.Contracts.Entities.InvoiceConfiguration;
+using Estream.Contracts.Common.Contracts.Entities.RenewalTerm;
+using Estream.Contracts.Common.Contracts.Enums;
+using Estream.Contracts.Common.Contracts.Mappings;
+using Estream.Contracts.Common.Contracts.Transitions;
+using Estream.Contracts.Common.Extensions;
+using Estream.Contracts.Common.MasterData.Entities;
+using Estream.Contracts.ContractHeaderDomain.Transitions;
+using Estream.Contracts.Properties;
+
+using Foundation.Coding.ErrorHandling;
+
+using Itenso.TimePeriod;
+
+using NServiceBus;
+
+namespace Estream.Contracts.TransportationContractDomain.Entities
+{
+    public class Transportation : BaseContract, IOverrideEntityType<Transportation, BaseContract>
+    {
+        public Transportation(CreateContractIntermediate createContractIntermediate)
+            : this()
+        {
+            Initialize(createContractIntermediate);
+        }
+
+        protected Transportation()
+        {
+            ServiceTypeId = ContractServiceType.Transportation;
+            TransportationLaycanLimitDetails = new List<TransportationLaycanLimit>();
+            TransportationLaycanWindowDetails = new List<TransportationLaycanWindow>();
+        }
+
+        public List<TransportationLaycanLimit> TransportationLaycanLimitDetails { get; set; }
+
+        public List<TransportationLaycanWindow> TransportationLaycanWindowDetails { get; set; }
+
+        public bool AnyPrimaryorSecondaryActiveStatusFee
+        {
+            get
+            {
+                var activeFees = Fees.Where(a => a.FeeStatus.IsActive()).ToList();
+                if (!activeFees.Any())
+                {
+                    return false;
+                }
+
+                var minDate = activeFees.Min(d => d.StartDate);
+                var maxDate = activeFees.Max(d => d.EndDate ?? DateTime.MaxValue.Date);
+
+                if (minDate.Equals(StartDate) && (EndDate.IsLessThan(maxDate) || EndDate.Equals(maxDate)))
+                {
+                    if (activeFees.Count == 1)
+                    {
+                        return true;
+                    }
+
+                    var dateCollection = new TimePeriodCollection(activeFees.Select(d => new TimeRange(d.StartDate, d.EndDate?.AddDays(1) ?? DateTime.MaxValue.Date)));
+
+                    return !dateCollection.HasGaps();
+                }
+
+                return false;
+            }
+        }
+
+        public bool AnyPrimaryorSecondaryFeeExists
+        {
+            get
+            {
+                var feeExists = Fees.ToList();
+                if (!feeExists.Any())
+                {
+                    return false;
+                }
+
+                var minDate = feeExists.Min(d => d.StartDate);
+                var maxDate = feeExists.Max(d => d.EndDate ?? DateTime.MaxValue.Date);
+
+                if (minDate.Equals(StartDate) && (EndDate.IsLessThan(maxDate) || EndDate.Equals(maxDate)))
+                {
+                    if (feeExists.Count == 1)
+                    {
+                        return true;
+                    }
+
+                    var dateCollection = new TimePeriodCollection(feeExists.Select(d => new TimeRange(d.StartDate, d.EndDate?.AddDays(1) ?? DateTime.MaxValue.Date)));
+
+                    return !dateCollection.HasGaps();
+                }
+
+                return false;
+            }
+        }
+
+        public void AddTransportationDetail(Action<ICollection<TransportationLaycanLimit>> action1, Action<ICollection<TransportationLaycanWindow>> action2, IEnumerable<TransportationLaycanLimit> updatedDockServices, IEnumerable<TransportationLaycanWindow> updatedLaycanPeriods, DateTime now)
+        {
+            action1.Invoke(TransportationLaycanLimitDetails);
+            action2.Invoke(TransportationLaycanWindowDetails);
+            if (TransportationLaycanLimitDetails.Count > 0)
+            {
+                TransportationLaycanLimitDetails.Clear();
+            }
+            else if (TransportationLaycanWindowDetails.Count > 0)
+            {
+                TransportationLaycanWindowDetails.Clear();
+            }
+            foreach (var dockService in updatedDockServices)
+            {
+                VerifyDateRangeForTransportInfo(dockService.FromPeriod, dockService.ToPeriod, now);
+                Verifier.Verify(new Verification(StartDate.Date.IsLessThanEqualTo(dockService.FromPeriod.Date) && dockService.ToPeriod.Date.IsLessThanEqualTo(EndDate.Date), "ContractDateValidation", VerificationMessage.ContractDateValidationForDockInfo));
+                ValidateDockServiceUniqueness(dockService);
+                TransportationLaycanLimitDetails.Add(new TransportationLaycanLimit(dockService.TransportationContractId, dockService.LaycanType, dockService.FromPeriod, dockService.ToPeriod, dockService.TerminalServiceActivityType, dockService.CommittedVolume, dockService.NominationLimit, dockService.NominationLimitUomId, dockService.CommittedVolumeUomId));
+            }
+            foreach (var laycanPeriod in updatedLaycanPeriods)
+            {
+                VerifyDateRangeForTransportInfo(laycanPeriod.FromPeriod, laycanPeriod.ToPeriod, now);
+                Verifier.Verify(new Verification(StartDate.Date.IsLessThanEqualTo(laycanPeriod.FromPeriod.Date) && laycanPeriod.ToPeriod.Date.IsLessThanEqualTo(EndDate.Date), "ContractDateValidation", VerificationMessage.ContractDateValidationForLaycanInfo));
+                ValidateLaycanServiceUniqueness(laycanPeriod);
+                TransportationLaycanWindowDetails.Add(new TransportationLaycanWindow(laycanPeriod.TransportationContractId, laycanPeriod.FromPeriod, laycanPeriod.ToPeriod, laycanPeriod.LaycanWindow));
+            }
+        }
+
+        public void VerifyLaycanDetails(Transportation contract, DateTime now)
+        {
+            if (contract.TransportationLaycanLimitDetails.Any())
+            {
+                foreach (var dockService in contract.TransportationLaycanLimitDetails)
+                {
+                    VerifyDateRangeForTransportInfo(dockService.FromPeriod, dockService.ToPeriod, now);
+                    Verifier.Verify(new Verification(StartDate.Date.IsLessThanEqualTo(dockService.FromPeriod.Date) && dockService.ToPeriod.Date.IsLessThanEqualTo(EndDate.Date), "ContractDateValidation", VerificationMessage.ContractDateValidationForDockInfo));
+                }
+            }
+
+            if (contract.TransportationLaycanWindowDetails.Any())
+            {
+                foreach (var laycanPeriod in contract.TransportationLaycanWindowDetails)
+                {
+                    VerifyDateRangeForTransportInfo(laycanPeriod.FromPeriod, laycanPeriod.ToPeriod, now);
+                    Verifier.Verify(new Verification(StartDate.Date.IsLessThanEqualTo(laycanPeriod.FromPeriod.Date) && laycanPeriod.ToPeriod.Date.IsLessThanEqualTo(EndDate.Date), "ContractDateValidation", VerificationMessage.ContractDateValidationForLaycanInfo));
+                }
+            }
+        }
+
+        public void DeleteTransportationInfo(DateTime now)
+        {
+            var dockServices = TransportationLaycanLimitDetails.ToList();
+            var laycanWindowPeriods = TransportationLaycanWindowDetails.ToList();
+
+            foreach (var dockService in dockServices)
+            {
+                TransportationLaycanLimitDetails.Remove(dockService);
+            }
+
+            foreach (var laycanPeriod in laycanWindowPeriods)
+            {
+                TransportationLaycanWindowDetails.Remove(laycanPeriod);
+            }
+        }
+
+        public override void Activate(User user, DateTime dateTime)
+        {
+            ValidateAnyPrimaryActiveFeeStatusForContractDateRange();
+            VerifyLaycanDetails(this, dateTime);
+            base.Activate(user, dateTime);
+        }
+
+        public override void ChangeEndDate(DateTime endDate, IEnumerable<Tuple<long, DateTime?>> feesToEndDate, IEnumerable<Tuple<long, DateTime?>> deductionsToEndDate, ContractRenewalTerm renewalTerm, IEnumerable<long> removeCalendarOverrides, DateTime now, User user, Action<ContractInvoiceConfigurationInvoiceCalendarConfiguration> deleteCalendar, bool isInitiatedFromContractGroup = false)
+        {
+            foreach (var contractFee in feesToEndDate)
+            {
+                var fee = Fees.Single(a => a.Id == contractFee.Item1);
+                fee.SetEndDate(contractFee.Item2, endDate, user, now);
+                if (fee.IsActive && !fee.IsPrimary)
+                {
+                    ValidateAnySecondaryActiveFeeStatusForContractDateRange(fee.FeeNumber, endDate);
+                }
+            }
+
+            var oldEndDate = EndDate;
+
+            base.ChangeEndDate(endDate, feesToEndDate, deductionsToEndDate, renewalTerm, removeCalendarOverrides, now, user, deleteCalendar);
+            Record(new TransportContractChangedEvent(CommercialAssetId, Id));
+
+            RecordTransportationContractEndDateChangedEvent(endDate, oldEndDate, user.FullName);
+        }
+
+        public new Transportation Copy(
+            CopyContractTransition transition,
+            ContractServiceSubType serviceSubType,
+            IEnumerable<BusinessEntityAccount> businessEntityAccounts,
+            BusinessEntityAccount interCompanyAssetOwnerAccount = null)
+        {
+            Transportation newContractDetail = (Transportation)base.Copy(transition, serviceSubType, businessEntityAccounts, interCompanyAssetOwnerAccount);
+
+            CopyLaycanInformation(transition, newContractDetail);
+
+            return newContractDetail;
+        }
+
+        public void Delete(Action<Transportation> deleteAction)
+        {
+            Verifier.Verify(Status == ContractStatus.Inactive, "DeleteContract", ContractResources.ContractDelete);
+            deleteAction.Invoke(this);
+        }
+
+        public override IList<IEvent> GetEvents()
+        {
+            IList<IEvent> events = new List<IEvent>();
+
+            foreach (var fee in Fees)
+            {
+                events.AddRange(fee.GetEvents());
+            }
+
+            foreach (var deduction in VolumeDeductions)
+            {
+                events.AddRange(deduction.GetEvents());
+            }
+
+            events.AddRange(base.GetEvents());
+
+            return events;
+        }
+
+        public override void RequestActivation(User user, DateTime now)
+        {
+            ValidateAnyPrimaryFeeExistsForContractDateRange();
+            if (IsBillable)
+            {
+                RequestAllInactiveFeeAndVolumetricDeductionActivation(user, now);
+            }
+            base.RequestActivation(user, now);
+        }
+
+        public override void ValidateAnyPrimaryFeeExistsForContractDateRange()
+        {
+            if (IsBillable)
+            {
+                {
+                    Verifier.Verify(
+                        ServiceSubTypeId == ServiceSubType.Exchange
+                            ? new Verification(AnyPrimaryorSecondaryFeeExists, "NoPrimaryorSecondaryActiveFee", ContractResources.NoPrimaryorSecondaryActiveFee)
+                            : new Verification(AnyPrimaryFeeExists, "NoPrimaryActiveFee", ContractResources.NoPrimaryActiveFee));
+                }
+            }
+        }
+
+        private bool AnySecondaryActiveFee(DateTime endDate)
+        {
+            var activeFees = Fees.Where(a => a.FeeStatus.IsActive() && !a.IsPrimary).ToList();
+            if (!activeFees.Any())
+            {
+                return false;
+            }
+
+            var minDate = activeFees.Min(d => d.StartDate);
+            var maxDate = activeFees.Max(d => d.EndDate ?? DateTime.MaxValue.Date);
+
+            if (minDate.Equals(StartDate) && (endDate.IsLessThan(maxDate) || endDate.Equals(maxDate)))
+            {
+                if (activeFees.Count == 1)
+                {
+                    return true;
+                }
+
+                var dateCollection = new TimePeriodCollection(activeFees.Select(d => new TimeRange(d.StartDate, d.EndDate?.AddDays(1) ?? DateTime.MaxValue.Date)));
+
+                return !dateCollection.HasGaps();
+            }
+
+            return false;
+        }
+
+        private void RecordTransportationContractEndDateChangedEvent(DateTime endDate, DateTime oldEndDate, string userFullName)
+        {
+            var endDatedFeesEvent = new List<FeeEndDatedEvent>();
+            foreach (var fee in Fees.Where(x => x.FeeType != Common.Enums.FeeType.ExcessVolume))
+            {
+                var feeEndDatedEvent = fee.GetEvents().OfType<FeeEndDatedEvent>().FirstOrDefault();
+                if (feeEndDatedEvent != null)
+                {
+                    // remove from fee events to avoid duplicated events
+                    fee.RemoveEvents(feeEndDatedEvent);
+                    endDatedFeesEvent.Add(feeEndDatedEvent);
+                }
+            }
+
+            if (endDatedFeesEvent.Any() || oldEndDate != endDate)
+            {
+                var newEndDate = EndDate;
+                var transportatonContractEndDateChangedEvent = new TransportationContractEndDateChangedEvent(Id, oldEndDate, newEndDate, (short)ServiceSubTypeId, endDatedFeesEvent, userFullName);
+                Record(transportatonContractEndDateChangedEvent);
+            }
+        }
+
+        private void ValidateAnyPrimaryActiveFeeStatusForContractDateRange()
+        {
+            if (IsBillable)
+            {
+                {
+                    Verifier.Verify(
+                        ServiceSubTypeId == ServiceSubType.Exchange
+                            ? new Verification(AnyPrimaryorSecondaryActiveStatusFee, "NoPrimaryorSecondaryActiveFee", ContractResources.NoPrimaryorSecondaryActiveFee)
+                            : new Verification(AnyPrimaryActiveStatusFee, "NoPrimaryActiveFee", ContractResources.NoPrimaryActiveFee));
+                }
+            }
+        }
+
+        private void VerifyDateRangeForTransportInfo(DateTime fromPeriod, DateTime toPeriod, DateTime now)
+        {
+            Verifier.Verify(new Verification(fromPeriod.Date.IsLessThanEqualTo(toPeriod.Date), "ToPeriodDateValidation", VerificationMessage.ToPeriodDateValidation));
+        }
+
+        private void ValidateDockServiceUniqueness(TransportationLaycanLimit dockService)
+        {
+            foreach (var x in TransportationLaycanLimitDetails)
+            {
+                if (x.LaycanType == dockService.LaycanType
+                    && x.TerminalServiceActivityType == dockService.TerminalServiceActivityType
+                    && x.NominationLimitUomId == dockService.NominationLimitUomId
+                    && x.CommittedVolumeUomId == dockService.CommittedVolumeUomId
+                    && (dockService.FromPeriod.IsDateInRange(x.FromPeriod, x.ToPeriod)
+                        || dockService.ToPeriod.IsDateInRange(x.FromPeriod, x.ToPeriod)
+                        || x.FromPeriod.IsDateInRange(dockService.FromPeriod, dockService.ToPeriod)
+                        || x.ToPeriod.IsDateInRange(dockService.FromPeriod, dockService.ToPeriod)))
+                {
+                    Verifier.Verify(new Verification(false, "DuplicateDockService", VerificationMessage.DuplicateDockService));
+                }
+            }
+        }
+
+        private void ValidateLaycanServiceUniqueness(TransportationLaycanWindow laycanWindowPeriod)
+        {
+            foreach (var x in TransportationLaycanWindowDetails)
+            {
+                if (laycanWindowPeriod.FromPeriod.IsDateInRange(x.FromPeriod, x.ToPeriod)
+                        || laycanWindowPeriod.ToPeriod.IsDateInRange(x.FromPeriod, x.ToPeriod)
+                        || x.FromPeriod.IsDateInRange(laycanWindowPeriod.FromPeriod, laycanWindowPeriod.ToPeriod)
+                        || x.ToPeriod.IsDateInRange(laycanWindowPeriod.FromPeriod, laycanWindowPeriod.ToPeriod))
+                {
+                    Verifier.Verify(new Verification(false, "DuplicateLaycanWindowPeriod", VerificationMessage.DuplicateLaycanWindowPeriod));
+                }
+            }
+        }
+
+        private void ValidateAnySecondaryActiveFeeStatusForContractDateRange(string feeNumber, DateTime endDate)
+        {
+            if (ServiceSubTypeId == ServiceSubType.Exchange)
+            {
+                Verifier.Verify(AnySecondaryActiveFee(endDate), "NoPrimaryOrSecondaryActiveFee", $"Fee Id - {feeNumber}: {ContractResources.NoSecondaryActiveFee}");
+            }
+        }
+
+        private void CopyLaycanInformation(CopyContractTransition transition, Transportation newContractDetail)
+        {
+            List<TransportationLaycanLimit> dockservices = new List<TransportationLaycanLimit>();
+            List<TransportationLaycanWindow> laycanWindowInfos = new List<TransportationLaycanWindow>();
+
+            // Copy DockServices Information
+            if (TransportationLaycanLimitDetails.Any())
+            {
+                foreach (var dockServiceInfo in TransportationLaycanLimitDetails)
+                {
+                    var dockService = dockServiceInfo.Copy(transition);
+                    dockservices.Add(dockService);
+                }
+            }
+
+            // Copy Laycan windows Information
+            if (TransportationLaycanWindowDetails.Any())
+            {
+                foreach (var laycanWindowInfo in TransportationLaycanWindowDetails)
+                {
+                    var laycanWindow = laycanWindowInfo.Copy(transition);
+
+                    // Update Laycan period date from contract date
+                    laycanWindow.SetStartDate(transition.StartDate);
+                    laycanWindow.SetEndDate(transition.EndDate);
+
+                    laycanWindowInfos.Add(laycanWindow);
+                }
+            }
+
+            newContractDetail.TransportationLaycanLimitDetails = dockservices;
+            newContractDetail.TransportationLaycanWindowDetails = laycanWindowInfos;
+        }
+    }
+}

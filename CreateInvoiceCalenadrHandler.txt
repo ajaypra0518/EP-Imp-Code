@@ -1,0 +1,340 @@
+// <copyright file="CreateInvoiceCalendarAssociationHandler.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using Estream.Accounting.Common.Enums;
+using Estream.Accounting.Common.Events;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Alerts;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Constants;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Entities;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Queries;
+using Estream.Accounting.Presentation.InvoiceCalendarDomain.Transitions;
+using Estream.Common.Entitlements.Data;
+using Foundation.Coding;
+using Foundation.Coding.ErrorHandling;
+using Foundation.Coding.Extensions;
+using Foundation.Coding.Tasks;
+using Foundation.Coding.Transitions;
+using Foundation.NServiceBus;
+using Highway.Data;
+using Itenso.TimePeriod;
+
+namespace Estream.Accounting.Presentation.InvoiceCalendarDomain.Handlers
+{
+    public class CreateInvoiceCalendarAssociationHandler : RepositoryTransitionHandlerBase<CreateInvoiceCalendarAssociationTransition>
+    {
+        private readonly IRepository _repository;
+        private readonly ITransactionalMessageSession _messageSession;
+        private readonly IProvideNow _nowProvider;
+
+        public CreateInvoiceCalendarAssociationHandler(ISecuredDomainRepositoryFactory repoFactory, ITransactionalMessageSession messageSession, IProvideNow nowProvider)
+            : base(repoFactory)
+        {
+            _repository = repoFactory.Create<InvoiceCalendarDomain>();
+            _messageSession = messageSession;
+            _nowProvider = nowProvider;
+        }
+
+        protected override void HandleTransitionInternal(CreateInvoiceCalendarAssociationTransition transition)
+        {
+            if (transition.EffectiveEndDate != null)
+            {
+                Verifier.Verify(transition.EffectiveEndDate >= transition.EffectiveStartDate, "ValidateDate", ErrorMessages.ValidateDate);
+            }
+
+            Verifier.Verify(transition.EffectiveStartDate >= _nowProvider.Now().GetFirstDayOfMonth(), "EffectiveStartDateGreaterThanMonthStartDate", ErrorMessages.EffectiveStartDateGreaterThanMonthStartDate);
+            var associations = CreateAssociations(transition);
+            if (transition.AssociationTypeId == (short)InvoiceAssociationType.NoCalendarOverrides)
+            {
+                associations = associations.Where(x => x.ContractId != null).ToList();
+            }
+            ValidateAssociations(associations);
+
+            _repository.Context.Commit();
+
+            PublishInvoiceCalendarAssociationCreatedOrUpdatedEvent(associations, transition.ApplicationUserId);
+        }
+
+        private void ValidateAssociations(List<InvoiceCalendarAssociationRule> associations)
+        {
+            foreach (var association in associations)
+            {
+                if (association.AssociationTypeId == (short)InvoiceAssociationType.Default)
+                {
+                    ValidateDefaultAssociation(association);
+                }
+                else
+                {
+                    ValidateOverrideAssociation(association);
+                }
+            }
+        }
+
+        private void ValidateOverrideAssociation(InvoiceCalendarAssociationRule association)
+        {
+            if (!IsDefaultAssociationExistsForOverrideAssociation(association))
+            {
+                Verifier.Verify(false, "DefaultAssociationNotExist", ErrorMessages.DefaultAssociationNotExist);
+            }
+
+            if (IsOverrideAssociationAlreadyExists(association))
+            {
+                Verifier.Verify(false, "OverrideAssociationExist", ErrorMessages.OverrideAssociationExist);
+            }
+
+            _repository.Context.Add(association);
+        }
+
+        private void ValidateDefaultAssociation(InvoiceCalendarAssociationRule association)
+        {
+            if (IsDefaultAssociationAlreadyExists(association))
+            {
+                Verifier.Verify(false, "DefaultAssociationExist", ErrorMessages.DefaultAssociationExist);
+            }
+
+            _repository.Context.Add(association);
+        }
+
+        private bool IsDefaultAssociationAlreadyExists(InvoiceCalendarAssociationRule association)
+        {
+            var defaultAssociationRules = _repository.Find(new GetInvoiceCalendarAssociation().DefaultAssociationsBy(association.AssetGroupId.Value, association.CommercialAssetId.Value));
+
+            foreach (var rule in defaultAssociationRules)
+            {
+                var periodCollection = new TimePeriodCollection(
+                new List<ITimePeriod>
+                {
+                    new TimeRange(rule.EffectiveStartDate, rule.EffectiveEndDate == null ? DateTime.MaxValue : rule.EffectiveEndDate.Value.AddTicks(1)),
+                    new TimeRange(association.EffectiveStartDate, association.EffectiveEndDate == null ? DateTime.MaxValue : association.EffectiveEndDate.Value.AddTicks(1))
+                });
+
+                if (periodCollection.HasOverlaps())
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsDefaultAssociationExistsForOverrideAssociation(InvoiceCalendarAssociationRule association)
+        {
+            var defaultAssociationRules = association.AssociationTypeId == (short)InvoiceAssociationType.NoCalendarOverrides ? _repository.Find(new GetInvoiceCalendarAssociation()
+                .SystemDefinedDefaultAssociationsBy(association.AssetGroupId.Value, association.CommercialAssetId.Value)).ToList()
+                : _repository.Find(new GetInvoiceCalendarAssociation()
+                .DefaultAssociationsBy(association.AssetGroupId.Value, association.CommercialAssetId.Value)).ToList();
+            foreach (var defaultAssociationRule in defaultAssociationRules)
+            {
+                var periodCollection = new TimePeriodCollection(
+                        new List<ITimePeriod>
+                        {
+                           new TimeRange(association.EffectiveStartDate, association.EffectiveEndDate == null ? DateTime.MaxValue : association.EffectiveEndDate.Value.AddTicks(1)),
+                        });
+
+                if (periodCollection.HasInsidePeriods(new TimeRange(defaultAssociationRule.EffectiveStartDate, defaultAssociationRule.EffectiveEndDate == null ? DateTime.MaxValue : defaultAssociationRule.EffectiveEndDate.Value.AddTicks(1))))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool IsOverrideAssociationAlreadyExists(InvoiceCalendarAssociationRule association)
+        {
+            var overrideAssociationRules = association.AssociationTypeId == (short)InvoiceAssociationType.CalendarOverride ? _repository.Find(new GetInvoiceCalendarAssociation().OverriddenAssociationsBy(association.AssetGroupId.Value, association.CommercialAssetId.Value, association.ContractId, association.ServiceFeeTypeId, association.BusinessEntityId, association.EffectiveStartDate, association.EffectiveEndDate, association.IsPriorPeriodAdjustmentOverride, association.PaymentTermId, association.InvoiceCalendarConfigurationId)).ToList()
+                : _repository.Find(new GetInvoiceCalendarAssociation().NoCalendarOverriddenAssociationsBy(association.AssetGroupId.Value, association.CommercialAssetId.Value, association.ContractId, association.ServiceFeeTypeId, association.BusinessEntityId, association.EffectiveStartDate, association.EffectiveEndDate, association.IsPriorPeriodAdjustmentOverride, association.PaymentTermId, association.InvoiceCalendarConfigurationId)).ToList();
+
+            foreach (var rule in overrideAssociationRules)
+            {
+                var periodCollection = new TimePeriodCollection(
+                new List<ITimePeriod>
+                {
+                    new TimeRange(rule.EffectiveStartDate, rule.EffectiveEndDate == null ? DateTime.MaxValue : rule.EffectiveEndDate.Value.AddTicks(1)),
+                    new TimeRange(association.EffectiveStartDate, association.EffectiveEndDate == null ? DateTime.MaxValue : association.EffectiveEndDate.Value.AddTicks(1))
+                });
+
+                if (periodCollection.HasOverlaps())
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void PublishInvoiceCalendarAssociationCreatedOrUpdatedEvent(List<InvoiceCalendarAssociationRule> associations, long applicationUserId)
+        {
+            foreach (var association in associations)
+            {
+                _messageSession.Publish(new InvoiceCalendarAssociationCreatedOrUpdatedEvent(association.CommercialAssetId.Value, association.ContractId, association.EffectiveStartDate, association.EffectiveEndDate, association.AssociationTypeId, association.IsPriorPeriodAdjustmentOverride, association.BusinessEntityId, association.ServiceFeeTypeId, applicationUserId)).Inline();
+
+                // below code will work after the commercial asset has an invoice calendar association
+                var alertToComplete = RebuildAlert(_repository, $"Missing Invoice Calendar for Commercial Asset {association.CommercialAssetId.Value.ToString(CultureInfo.InvariantCulture)}");
+                if (alertToComplete != null)
+                {
+                    alertToComplete.MarkComplete(applicationUserId);
+                    _messageSession.Publish(alertToComplete).Inline();
+                }
+            }
+        }
+
+        private MissingCommercialAssetInvoiceCalendarAlert RebuildAlert(IRepository repo, string conflationKey)
+        {
+            var alertData = repo.Find(new GetAlertDataByConflationKey(conflationKey));
+            if (alertData != null)
+            {
+                return new MissingCommercialAssetInvoiceCalendarAlertBuilder().BuildAlertForMissingCommercialAsset(alertData);
+            }
+            return null;
+        }
+
+        private List<InvoiceCalendarAssociationRule> CreateAssociations(CreateInvoiceCalendarAssociationTransition transition)
+        {
+            var associations = new List<InvoiceCalendarAssociationRule>();
+            var commercialAssetIds = transition.CommercialAssetIds;
+            var businessEntityIds = transition.BusinessEntityIds;
+            var nonContractBusinessEntitiesIds = new List<long>();
+            if (transition.ContractIds != null)
+            {
+                var contracts = _repository.Find(new GetContractsByCommercialAssetId(transition.CommercialAssetIds)).ToList();
+
+                // extract selected contracts
+                var filterredContracts = contracts.Where(x => transition.ContractIds.Contains(x.Id)).Distinct().ToList();
+
+                // extract commercial asset ids on which contract is exist
+                var contractcommercialAssetIds = filterredContracts.Select(x => x.CommercialAsset.Id).Distinct().ToList();
+
+                // extract commercial asset ids on which contract is not  exist
+                var nonConractCommercialassetIds = transition.CommercialAssetIds.Where(x => !contractcommercialAssetIds.Contains(x)).ToArray();
+
+                if (transition.BusinessEntityIds != null)
+                {
+                    // extract contracts exist on business entiy
+                    var filterContractsOnBusinessEntities = filterredContracts.Where(x => transition.BusinessEntityIds.Contains(x.BusinessEntityAccount.Entity.Id)).ToList();
+
+                    // extract business entity ids on which contract is exist
+                    var contractBusinessEntities = filterContractsOnBusinessEntities.Select(x => x.BusinessEntityAccount.Entity.Id).Distinct().ToList();
+
+                    // extract business entity ids on which contract is not exist
+                    nonContractBusinessEntitiesIds = transition.BusinessEntityIds.Where(x => !contractBusinessEntities.Contains(x)).Distinct().ToList();
+                }
+                if (transition.ContractIds.Length > 0)
+                {
+                    foreach (var contractId in transition.ContractIds)
+                    {
+                        // extract business entity id exist on particular contract
+                        var filterredContractBusinessEntities = contracts.Where(x => x.Id == contractId).Select(x => x.BusinessEntityAccount.Entity.Id).ToList();
+
+                        // extract commercial asset  id exist on particular contract
+                        var commercialAssetId = filterredContracts.Where(x => x.Id == contractId).Select(x => x.CommercialAsset.Id).Single();
+
+                        if (transition.ServiceFeeTypeIds == null && transition.BusinessEntityIds == null)
+                        {
+                            InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, null, null, contractId, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                            associations.Add(association);
+                        }
+                        else if (transition.ServiceFeeTypeIds != null && transition.BusinessEntityIds != null)
+                        {
+                            foreach (var serviceTypeId in transition.ServiceFeeTypeIds)
+                            {
+                                foreach (var businessEntityId in filterredContractBusinessEntities)
+                                {
+                                    InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, businessEntityId, serviceTypeId, contractId, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                                    associations.Add(association);
+                                }
+                            }
+                        }
+                        else if (transition.ServiceFeeTypeIds == null && transition.BusinessEntityIds != null)
+                        {
+                            foreach (var businessEntityId in filterredContractBusinessEntities)
+                            {
+                                InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, businessEntityId, null, contractId, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                                associations.Add(association);
+                            }
+                        }
+                        else
+                        {
+                            foreach (var serviceTypeId in transition.ServiceFeeTypeIds)
+                            {
+                                InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, null, serviceTypeId, contractId, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                                associations.Add(association);
+                            }
+                        }
+                    }
+
+                    // when business entity has no contract
+                    if (nonContractBusinessEntitiesIds.Any())
+                    {
+                        foreach (var commercialAssetId in contractcommercialAssetIds.Where(x => !nonConractCommercialassetIds.Contains(x)))
+                        {
+                            foreach (var businessEntityId in nonContractBusinessEntitiesIds)
+                            {
+                                if (transition.ServiceFeeTypeIds != null)
+                                {
+                                    foreach (var serviceTypeId in transition.ServiceFeeTypeIds)
+                                    {
+                                        InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, businessEntityId, serviceTypeId, null, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                                        associations.Add(association);
+                                    }
+                                }
+                                else if (transition.ServiceFeeTypeIds == null)
+                                {
+                                    InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, businessEntityId, null, null, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                                    associations.Add(association);
+                                }
+                            }
+                        }
+                    }
+
+                    commercialAssetIds = nonConractCommercialassetIds;
+                }
+            }
+
+            // association rule creation for commercial assets ids which has no contracts
+            foreach (var commercialAssetId in commercialAssetIds)
+            {
+                if (transition.ServiceFeeTypeIds == null && transition.BusinessEntityIds == null)
+                {
+                    InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, null, null, null, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                    associations.Add(association);
+                }
+                else if (transition.ServiceFeeTypeIds != null && transition.BusinessEntityIds != null)
+                {
+                    foreach (var serviceTypeId in transition.ServiceFeeTypeIds)
+                    {
+                        foreach (var businessEntityId in transition.BusinessEntityIds)
+                        {
+                            InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, businessEntityId, serviceTypeId, null, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                            associations.Add(association);
+                        }
+                    }
+                }
+                else if (transition.ServiceFeeTypeIds == null && transition.BusinessEntityIds != null)
+                {
+                    foreach (var businessEntityId in transition.BusinessEntityIds)
+                    {
+                        InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, businessEntityId, null, null, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                        associations.Add(association);
+                    }
+                }
+                else
+                {
+                    foreach (var serviceTypeId in transition.ServiceFeeTypeIds)
+                    {
+                        InvoiceCalendarAssociationRule association = new InvoiceCalendarAssociationRule(transition.InvoiceCalendarConfigId, transition.EffectiveStartDate, transition.EffectiveEndDate, transition.AssetGroupId, commercialAssetId, null, serviceTypeId, null, transition.PaymentTermId, transition.AssociationTypeId, transition.IsPriorPeriodAdjustmentOverride, transition.IsAllBussinessEntitySelected, transition.IsAllContractsSelected, transition.IsAllServiceFeeSelected);
+                        associations.Add(association);
+                    }
+                }
+            }
+            return associations;
+        }
+    }
+}

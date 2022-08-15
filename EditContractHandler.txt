@@ -1,0 +1,67 @@
+// <copyright file="EditContractHandler.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using Estream.Common;
+using Estream.Common.Entitlements.Data;
+using Estream.Contracts.Common.Contracts.Queries;
+using Estream.Contracts.Common.Contracts.Transitions;
+using Estream.Contracts.ContractHeaderDomain.Queries;
+using Estream.Contracts.ContractHeaderDomain.Transitions;
+using Foundation.Coding;
+using Foundation.Coding.Tasks;
+using Foundation.NServiceBus;
+
+using Highway.Data;
+
+namespace Estream.Contracts.ContractHeaderDomain.Handlers
+{
+    public class EditContractHandler : BaseHandlerSecured<UpdateTransition<ContractTransitionBase>>
+    {
+        private readonly IProvideNow _now;
+
+        private readonly ITransactionalMessageSession _messageSession;
+
+        private readonly IRepository _repository;
+
+        public EditContractHandler(ISecuredDomainRepositoryFactory domainRepository, IProvideNow now, ITransactionalMessageSession messageSession)
+            : base(domainRepository, messageSession)
+        {
+            _now = now;
+            _messageSession = messageSession;
+            _repository = RepositoryFactory.Create<ContractsDomain>();
+        }
+
+        protected override void HandleTransitionInternalImpl(UpdateTransition<ContractTransitionBase> concreteTransition)
+        {
+            var model = concreteTransition.Subject;
+            var intermediate = new EditContractIntermediateBuilder(model, _repository, _now.Now()).Build();
+            var contract = _repository.Find(new GetContractById(model.Id));
+
+            contract.ContractServiceSubTypes = _repository.Find(new GetServiceSubTypes().ByServiceTypeId((short)contract.ServiceTypeId));
+            foreach (var fee in contract.Fees)
+            {
+                fee.Validate(contract, intermediate);
+            }
+
+            if (intermediate.StartDate.Year != contract.StartDate.Year)
+            {
+                using (new UnsecuredQueryScope("Getting sequence number only"))
+                {
+                    contract.SequenceNumber = _repository.Find(new GetNextSequenceByYear(intermediate.StartDate.Year));
+                }
+            }
+
+            contract.Update(intermediate, company => { _repository.Context.Remove(company); });
+            _repository.Context.Commit();
+            foreach (var @event in contract.GetEvents())
+            {
+                _messageSession.Publish(@event).Inline();
+            }
+        }
+    }
+}

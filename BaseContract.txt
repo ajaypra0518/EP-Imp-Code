@@ -1,0 +1,2539 @@
+// <copyright file="BaseContract.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.IO;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Text;
+
+using Estream.Common;
+using Estream.Common.CrossDomainEvents.AlertsAndNotifications;
+using Estream.Common.CrossDomainEvents.Contracts.BaseContract;
+using Estream.Common.CrossDomainEvents.Contracts.Fee;
+using Estream.Common.CrossDomainEvents.Pricing;
+using Estream.Common.Data;
+using Estream.Common.DocumentStorage;
+using Estream.Common.DocumentStorage.Domain;
+using Estream.Common.DomainRepos.Contracts;
+using Estream.Common.Enums;
+using Estream.Contracts.Common.Contracts.Alerts;
+using Estream.Contracts.Common.Contracts.Entities.Clauses;
+using Estream.Contracts.Common.Contracts.Entities.ContractScheduledNotification;
+using Estream.Contracts.Common.Contracts.Entities.Fees;
+using Estream.Contracts.Common.Contracts.Entities.Formula;
+using Estream.Contracts.Common.Contracts.Entities.InvoiceConfiguration;
+using Estream.Contracts.Common.Contracts.Entities.RenewalTerm;
+using Estream.Contracts.Common.Contracts.Entities.VolumetricDeduction;
+using Estream.Contracts.Common.Contracts.Enums;
+using Estream.Contracts.Common.Contracts.Mappings;
+using Estream.Contracts.Common.Contracts.Notifications;
+using Estream.Contracts.Common.Contracts.Transitions;
+using Estream.Contracts.Common.Contracts.Validators;
+using Estream.Contracts.Common.Enums;
+using Estream.Contracts.Common.Extensions;
+using Estream.Contracts.Common.MasterData.Entities;
+using Estream.Contracts.Common.MasterData.Enums;
+using Estream.Contracts.Common.ValueObjects.Entities;
+using Estream.Contracts.Common.VolumetricDeduction.Entities;
+using Estream.Contracts.ContractHeaderDomain;
+using Estream.Contracts.ContractHeaderDomain.Alerts;
+using Estream.Contracts.ContractHeaderDomain.Transitions;
+using Estream.Contracts.ContractHeaderDomain.Transitions.Fees;
+using Estream.Contracts.ContractHeaderDomain.Transitions.VolumetricDeduction;
+using Estream.Contracts.Properties;
+using Foundation.Coding.ErrorHandling;
+using Foundation.Coding.Extensions;
+
+using Itenso.TimePeriod;
+
+namespace Estream.Contracts.Common.Contracts.Entities
+{
+    /// <summary>
+    ///     This is an abstract contract class with all the actions can be done on a contract header.This should not have any
+    ///     direct EF mapping.
+    /// </summary>
+    /// Customer
+    public abstract class BaseContract : BaseDomain
+    {
+        public const string RegulatedType = "Transportation-Tariff";
+
+        protected BaseContract()
+        {
+            Fees = new List<Fee>();
+            ContractClauses = new List<ContractClause>();
+            VolumeDeductions = new List<ContractVolumeDeduction>();
+            BusinessEntityAccounts = new List<BusinessEntityAccount>();
+            ScheduledNotifications = new List<ScheduledNotification>();
+            ParticipatingCompanies = new List<AgreementParticipatingCompany>();
+            Comments = new List<ContractComment>();
+            Revisions = new List<ContractRevision>();
+            AgreementType = TypeOfAgreement.Contract;
+            Status = ContractStatus.Inactive;
+            ExchangeContracts = new List<LinkedExchangeContract>();
+        }
+
+        public IEnumerable<Fee> ActiveFees
+        {
+            get
+            {
+                return Fees.Where(c => c.FeeStatus == FeeStatus.Active);
+            }
+        }
+
+        public bool IsJointContract { get; protected set; }
+
+        public TypeOfAgreement AgreementType { get; protected set; }
+
+        public bool AnyPrimaryActiveStatusFee
+        {
+            get
+            {
+                var activeFees = (ServiceTypeId == ContractServiceType.Transportation && ServiceSubTypeId == ServiceSubType.Exchange)
+                    ? Fees.Where(a => a.FeeStatus.IsActive()).ToList()
+                    : Fees.Where(a => a.FeeStatus.IsActive() && a.IsPrimary).ToList();
+
+                if (!activeFees.Any())
+                {
+                    return false;
+                }
+
+                var minDate = activeFees.Min(d => d.StartDate);
+                var maxDate = activeFees.Max(d => d.EndDate ?? DateTime.MaxValue.Date);
+
+                if (minDate.Equals(StartDate) && (EndDate.IsLessThan(maxDate) || EndDate.Equals(maxDate)))
+                {
+                    if (activeFees.Count == 1)
+                    {
+                        return true;
+                    }
+
+                    var dateCollection = new TimePeriodCollection(activeFees.Select(d => new TimeRange(d.StartDate, d.EndDate?.AddDays(1) ?? DateTime.MaxValue.Date)));
+
+                    return !dateCollection.HasGaps();
+                }
+
+                return false;
+            }
+        }
+
+        public bool AnyPrimaryFeeExists
+        {
+            get
+            {
+                var allValidFees = (ServiceTypeId == ContractServiceType.Transportation && ServiceSubTypeId == ServiceSubType.Exchange)
+                    ? Fees.ToList()
+                    : Fees.Where(a => a.IsPrimary).ToList();
+
+                if (!allValidFees.Any())
+                {
+                    return false;
+                }
+
+                var minDate = allValidFees.Min(d => d.StartDate);
+                var maxDate = allValidFees.Max(d => d.EndDate ?? DateTime.MaxValue.Date);
+
+                if (minDate.Equals(StartDate) && (EndDate.IsLessThan(maxDate) || EndDate.Equals(maxDate)))
+                {
+                    if (allValidFees.Count == 1)
+                    {
+                        return true;
+                    }
+
+                    var dateCollection = new TimePeriodCollection(allValidFees.Select(d => new TimeRange(d.StartDate, d.EndDate?.AddDays(1) ?? DateTime.MaxValue.Date)));
+
+                    return !dateCollection.HasGaps();
+                }
+
+                return false;
+            }
+        }
+
+        public DateTime? ApprovalDateTime { get; protected set; }
+
+        public User ApprovedBy { get; protected set; }
+
+        public long? ApprovedByUserId { get; protected set; }
+
+        public AssetGroup AssetGroup { get; set; }
+
+        public long AssetGroupId { get; set; }
+
+        public BusinessEntity AssetOwner { get; protected set; }
+
+        public BusinessEntityAccount AssetOwnerAccount { get; protected set; }
+
+        public long? AssetOwnerAccountId { get; protected set; }
+
+        public string AssetOwnerContact { get; protected set; }
+
+        public long AssetOwnerId { get; protected set; }
+
+        public ICollection<ContractBillingRecordScheduleLineItem> BillingRecords { get; protected set; }
+
+        public ICollection<BusinessEntityAccount> BusinessEntityAccounts { get; protected set; }
+
+        public DateTime? CommencementDate { get; protected set; }
+
+        public ICollection<ContractComment> Comments { get; set; }
+
+        public ICollection<ContractRevision> Revisions { get; set; }
+
+        public CommercialAsset CommercialAsset { get; set; }
+
+        public long CommercialAssetId { get; protected set; }
+
+        public IList<ContractClause> ContractClauses { get; protected set; }
+
+        public ContractEscalationPeriod ContractEscalationPeriod { get; protected set; }
+
+        public long? ContractEscalationPeriodId { get; protected set; }
+
+        public ContractGroup ContractGroup { get; set; }
+
+        public long? ContractGroupId { get; protected set; }
+
+        public ContractInvoiceConfiguration ContractInvoiceConfiguration { get; protected set; }
+
+        public ContractRenewalTerm ContractRenewalTerm { get; protected set; }
+
+        public long? ContractRenewalTermId { get; protected set; }
+
+        public short ContractTermTypeId { get; protected set; }
+
+        public User CreatedBy { get; protected set; }
+
+        public long CreatedByUserId { get; protected set; }
+
+        public DateTime CreationDateTime { get; protected set; }
+
+        [NotMapped]
+        public BusinessEntity Customer => BusinessEntityAccounts.First().Entity;
+
+        public string CustomerContact { get; protected set; }
+
+        public string Description { get; protected set; }
+
+        public string Alias { get; protected set; }
+
+        public DateTime EndDate { get; protected set; }
+
+        public DateTime? ExecutionDate { get; protected set; }
+
+        public ICollection<Fee> Fees { get; set; }
+
+        public bool HasBillingRecords => BillingRecords != null && BillingRecords.Any();
+
+        public bool HasCustomer =>
+            BusinessEntityAccounts != null
+            && BusinessEntityAccounts.Count > 0;
+
+        public bool HasHoldback { get; protected set; }
+
+        public bool IsCycleBased { get; protected set; }
+
+        public CommercialAsset InterCompanyCommercialAsset { get; set; }
+
+        public long? InterCompanyCommercialAssetId { get; protected set; }
+
+        public bool IsActive => Status == ContractStatus.Active;
+
+        public bool IsBillable { get; set; }
+
+        public bool IsInterestedInTimePart
+        {
+            get
+            {
+                return !IsBillable && ServiceTypeId == ContractServiceType.Storage && ServiceSubTypeId == ServiceSubType.Trade;
+            }
+        }
+
+        public bool IsRateSheetBillable { get; set; }
+
+        public bool IsTariffBillable { get; set; }
+
+        public bool IsRegulated => ServiceTypeId == ContractServiceType.TransportationTariff;
+
+        public DateTime LastModificationDateTime { get; protected set; }
+
+        public User LastModifiedBy { get; protected set; }
+
+        public long LastModifiedByUserId { get; protected set; }
+
+        public ICollection<LinkedExchangeContract> ExchangeContracts { get; protected set; }
+
+        public string ReferenceContractNumber { get; protected set; }
+
+        public ICollection<ScheduledNotification> ScheduledNotifications { get; protected set; }
+
+        public ServiceSubType ServiceSubTypeId { get; protected set; }
+
+        public ContractServiceType ServiceTypeId { get; protected set; }
+
+        public string SmartCode { get; protected set; }
+
+        public string SmartCodeBase { get; internal set; }
+
+        public DateTime StartDate { get; protected set; }
+
+        public ContractStatus Status { get; protected set; }
+
+        public TermType TermType { get; protected set; }
+
+        public ICollection<ContractVolumeDeduction> VolumeDeductions { get; protected set; }
+
+        public long SequenceNumber { get; set; }
+
+        public ICollection<AgreementParticipatingCompany> ParticipatingCompanies { get; set; }
+
+        public bool IsEDIEnabled { get; set; }
+
+        public bool IsMovementCommercialAssetUsedForAccountCoding { get; protected set; }
+
+        public IEnumerable<ContractServiceSubType> ContractServiceSubTypes { get; set; }
+
+        private bool IsContractReadOnly => Status == ContractStatus.Cancelled || Status == ContractStatus.Expired;
+
+        public virtual void Activate(User user, DateTime dateTime)
+        {
+            if (LastModifiedBy == user)
+            {
+                Verifier.Verify(new Verification(false, "Last Modified User", $"Contract Id - {Id}: {VerificationMessage.Contract.SameModifiedUser}"));
+            }
+
+            Verifier.Verify(new Verification(Status == ContractStatus.Inactive, "OnlyInactiveContractActivate", $"Contract Id - {Id}: {VerificationMessage.Contract.OnlyInactiveTariffActivate}"));
+            Status = ContractStatus.Active;
+            ApprovedBy = user;
+            ApprovedByUserId = user.Id;
+            ApprovalDateTime = dateTime;
+            LastModifiedBy = user;
+            LastModificationDateTime = dateTime;
+            LastModifiedByUserId = user.Id;
+            ValidateContract();
+            SendEventsOnActivate(user, dateTime);
+
+            foreach (var notification in ScheduledNotifications)
+            {
+                Record(
+                    new CreateScheduledNotification(new Lazy<string>(() => Convert.ToString(notification.ScheduledNotificationId)))
+                    {
+                        DisplayName = notification.MessageHeader,
+                        Description = CreateEmailBody(notification),
+                        CronExpression = notification.CronExpression,
+                        SelectedDistributionGroupIds = notification.DistributionGroups.Select(d => d.Id).ToArray(),
+                        DefinitionSource = "Contracts",
+                        StartDate = notification.StartDate,
+                        EndDate = notification.EndDate,
+                        BusinessFunction = "Contracts"
+                    });
+            }
+
+            Verifier.Verify(CreationDateTime <= ApprovalDateTime, CommonCatalog.ApprovedDateValidation(CreationDateTime.ToDateHourMinuteAmPmString(), ApprovalDateTime?.ToDateHourMinuteAmPmString()));
+        }
+
+        public Fee ActivateFee(long feeId, User user, DateTime now)
+        {
+            var fee = Fees.Single(a => a.Id == feeId);
+            Verifier.Verify(fee.ValidateTierFeeStartDate());
+            VerifyFeeCanBeActivatedAndRecordEvents(user, now, fee);
+            EndDateFeeValidation(fee);
+            fee.Activate(EndDate, user, now);
+
+            if (Status == ContractStatus.Active)
+            {
+                // Evaluate formula rates
+                Record(new EvaluateActivatedFormulaFeeEvent(feeId));
+            }
+
+            Record(new ContractFeeActivatedNotification(this, fee, $"{user.FirstName} {user.LastName}", now));
+
+            return fee;
+        }
+
+        public void ActivateVolumetricDeduction(long id, User user, DateTime now)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var volumetricDeduction = VolumeDeductions.Single(x => x.Id == id);
+
+            if (volumetricDeduction.IsActive)
+            {
+                Verifier.Verify(new Verification(false, "AlreadyActive", "Deduction is already active"));
+            }
+
+            if (volumetricDeduction.LastModifiedBy == user)
+            {
+                Verifier.Verify(new Verification(false, "Last Modified User", $"Deduction D{volumetricDeduction.VolumeDeductionNumber}-{volumetricDeduction.Version} {VerificationMessage.VolumetricDeduction.SameModifiedUser}"));
+            }
+
+            var priorActiveDeduction = GetPriorActiveDeduction(volumetricDeduction);
+            priorActiveDeduction?.Cancel();
+            volumetricDeduction.Activate(user, now);
+        }
+
+        public void AddComment(User authorUser, string comment, DateTime authoredDateTime)
+        {
+            var contractComment = new ContractComment(authorUser, authoredDateTime, comment, (short)Comments.Count);
+            Comments.Add(contractComment);
+        }
+
+        public void AddRevision(User authorUser, string revision, DateTime authoredDateTime)
+        {
+            var contractRevision = new ContractRevision(authorUser, authoredDateTime, revision, (short)Revisions.Count);
+            Revisions.Add(contractRevision);
+        }
+
+        public void AddVolumeTier(ContractTieredFeeRateTransition tier, long feeId)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var volumeFee = Fees.OfType<VolumeFee>().FirstOrDefault(d => d.Id == feeId);
+            VerifyLatestFeeVersion(volumeFee);
+            if (volumeFee != null && volumeFee.FeeStatus == FeeStatus.Active)
+            {
+                var fee = volumeFee.AddActiveVolumeFeeTier(tier);
+                Fees.Add(fee);
+                volumeFee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                volumeFee?.AddTier(tier);
+            }
+        }
+
+        public void BulkActivateFees(User user, DateTime now)
+        {
+            var inactiveFees = Fees.Where(x => x.FeeStatus == FeeStatus.Inactive).ToList();
+            Verifier.Verify(inactiveFees.Any(), ContractHeaderCatalog.ContractBulkFeeActivation());
+            var verifications = new List<Verification>();
+            inactiveFees.ForEach(x => verifications.Add(x.ValidateTierFeeStartDate()));
+            Verifier.Verify(verifications);
+
+            VerifyFeeCanBeActivatedAndRecordEvents(user, now, inactiveFees);
+
+            foreach (var fee in inactiveFees)
+            {
+                EndDateFeeValidation(fee);
+                fee.Activate(EndDate, user, now);
+                var activateAlert = new RequestContractFeeActivationAlert(fee, this, now, user);
+                activateAlert.MarkComplete(user.Id);
+                Record(activateAlert);
+                if (Status == ContractStatus.Active)
+                {
+                    // Evaluate formula rates
+                    Record(new EvaluateActivatedFormulaFeeEvent(fee.Id));
+                }
+            }
+
+            Record(new ContractFeesBulkActivatedNotification(this, user, now));
+        }
+
+        public CalculatedResult CalculateVolumetriDeduction(FeeOriginDestinationPair feeOriginDestinationPair, DateTime date, VolumeDeductionType volumetricDeductionType, decimal? apiGravity = null)
+        {
+            if (VolumeDeductions == null)
+            {
+                return null;
+            }
+
+            // all active deductions
+            var volumeDeductions = VolumeDeductions.Where(x => x.IsActive);
+
+            // between date range
+            volumeDeductions = volumeDeductions.Where(
+                x => x.StartDate <= date && (x.EndDate.HasValue
+                    ? x.EndDate
+                    : DateTime.MaxValue) >= date);
+
+            // is a PLA
+            volumeDeductions = volumeDeductions.Where(x => x.VolumeDeductionType == volumetricDeductionType);
+
+            // matches on Product
+            var volumeDeductionProducts = volumeDeductions.Where(x => x.Products.Count > 0).ToList();
+            if (volumeDeductionProducts.Count > 0)
+            {
+                volumeDeductions = volumeDeductions.Where(x => x.Products.Any(p => p.ProductId == feeOriginDestinationPair.InventoryProductId));
+            }
+
+            // matches on Product Group
+            var volumeDeductionProductGroups = volumeDeductions.Where(x => x.ProductGroups.Count > 0).ToList();
+            if (volumeDeductionProductGroups.Count > 0)
+            {
+                volumeDeductions = volumeDeductions.Where(x => x.ProductGroups.Any(y => y.InventoryProductGroup.Products.Any(b => b.Id == feeOriginDestinationPair.InventoryProductId)));
+            }
+
+            // template is flat in case of PLA deductions.
+            volumeDeductions = volumeDeductions.Where(x => volumetricDeductionType == VolumeDeductionType.Pla ? !x.IsTiered : true);
+
+            // Validate receipt/delivery
+            volumeDeductions = volumeDeductions.Where(
+                x => x.ReceiptDeliveryType == (feeOriginDestinationPair.IsReceipt
+                    ? VolumeDeductionReceiptDeliveryType.Receipt
+                    : VolumeDeductionReceiptDeliveryType.Delivery));
+
+            var factors = new List<CalculatedResult>();
+
+            // Route based takes higher priority than no routebase
+            var routeBasedDeductions = volumeDeductions.Where(d => d.IsRouteBased);
+            foreach (var contractVolumeDeduction in routeBasedDeductions)
+            {
+                // always check if the route works first
+                var routeFactor = contractVolumeDeduction.GetVolumetricDeductionForRoute(feeOriginDestinationPair, apiGravity, volumetricDeductionType);
+                if (routeFactor != null)
+                {
+                    factors.Add(new CalculatedResult(AssetOwnerId, routeFactor.Value, contractVolumeDeduction.InventoryFacilityId, Id, contractVolumeDeduction.Id, contractVolumeDeduction.VolumeDeductionType));
+                }
+            }
+
+            var nonRouteBasedDeductions = volumeDeductions.Where(d => d.IsRouteBased == false);
+            foreach (var contractVolumeDeduction in nonRouteBasedDeductions)
+            {
+                var receiptFactor = contractVolumeDeduction.GetNonRouteBasedVolumetricDeduction(feeOriginDestinationPair, apiGravity, volumetricDeductionType);
+                if (receiptFactor != null)
+                {
+                    factors.Add(new CalculatedResult(AssetOwnerId, receiptFactor.Value, contractVolumeDeduction.InventoryFacilityId, Id, contractVolumeDeduction.Id, contractVolumeDeduction.VolumeDeductionType));
+                }
+            }
+
+            // return the first factor return which will be either the route if one exists or
+            // the receipt / delivery.  The route always wins that is why we get the first one
+            if (factors.Count >= 1)
+            {
+                return factors[0];
+            }
+
+            return null;
+        }
+
+        public virtual void CancelContract(User cancelingUser, string comment, DateTime authoredDateTime)
+        {
+            Verifier.Verify(Status == ContractStatus.Active, "Cancel Contract", ContractResources.NonActiveContractsCannotBeCancelled);
+            Verifier.Verify(comment.IsNotNullOrEmpty(), "Cancel Contract", ContractResources.CancelContractCommentRequired);
+
+            // Cancel fees
+            var feesToCancel = Fees.Where(f => f.FeeStatus == FeeStatus.Active).ToList();
+            foreach (var fee in feesToCancel)
+            {
+                fee.Cancel(authoredDateTime);
+            }
+
+            // Cancel Volumetric deduction
+            foreach (var volumeDeduction in VolumeDeductions.Where(d => d.VolumeDeductionStatus == VolumeDeductionStatus.Active))
+            {
+                volumeDeduction.Cancel();
+            }
+
+            AddComment(cancelingUser, comment, authoredDateTime);
+
+            Status = ContractStatus.Cancelled;
+
+            Record(new ContractCanceledNotification(this, cancelingUser.FirstName, cancelingUser.LastName, NowSingleton.Instance.Now()));
+            Record(new ContractCanceledEvent(Id, feesToCancel.Select(x => x.Id).ToArray(), NowSingleton.Instance.Now(), cancelingUser.FullName));
+        }
+
+        public virtual void ChangeEndDate(DateTime endDate, IEnumerable<Tuple<long, DateTime?>> feeIdsToEndDate, IEnumerable<Tuple<long, DateTime?>> deductionsToEndDate, ContractRenewalTerm renewalTerm, IEnumerable<long> removeCalendarOverrides, DateTime now, User user, Action<ContractInvoiceConfigurationInvoiceCalendarConfiguration> deleteCalendar, bool isInitiatedFromContractGroup = false)
+        {
+            Verifier.Verify(user != null, "UserNull", "User is required to end date.");
+            var oldEndDate = EndDate;
+
+            if (!ContractGroupId.HasValue)
+            {
+                // Contracts which are not in any group, can be end dated only if they are either active or expired.
+                // But Contracts which are part of group, can be end dated regardless of the status.
+                if (Status != ContractStatus.Active && Status != ContractStatus.Expired)
+                {
+                    Verifier.Verify(false, "Contract EndDate", "Contract needs to be in active / expired  status to enddate");
+                }
+            }
+
+            // End date contract
+            EndDate = endDate;
+            LastModifiedBy = user;
+            LastModifiedByUserId = user.Id;
+            LastModificationDateTime = now;
+            ValidateContractGroupDateBoundaries();
+
+            // change contract status to active if it is expired and moved pased the current date
+            if (Status == ContractStatus.Expired && EndDate.Date >= now.Date)
+            {
+                Status = ContractStatus.Active;
+
+                Record(new ContractActivatedNotification(this, user.FullName, now));
+                Record(new ContractActivatedEvent(Id, user.FullName));
+            }
+            else if (Status == ContractStatus.Active && EndDate.Date < now.Date)
+            {
+                // change contract status to expired if it is active and the date is moved to a previews date, I use the current date because the date must be higher than the End date.
+                ExpireContract(now.Date);
+            }
+
+            // End Date fee
+            foreach (var contractFee in feeIdsToEndDate.OrderByDescending(x => x.Item2 ?? DateTime.MaxValue))
+            {
+                var fee = Fees.Single(a => a.Id == contractFee.Item1);
+
+                // We only want to end date fees that have the same original end date as its contract
+                if (isInitiatedFromContractGroup && fee.EndDate?.Date != oldEndDate.Date)
+                {
+                    continue;
+                }
+                fee.SetEndDate(contractFee.Item2, EndDate, user, now);
+                EndDateFeeValidation(fee);
+            }
+
+            // End Date Deduction
+            foreach (var deduction in deductionsToEndDate)
+            {
+                var volumetricDeduction = VolumeDeductions.Single(x => x.Id == deduction.Item1);
+                volumetricDeduction.SetEndDate(deduction.Item2, user, now);
+                EndDateDeductionValidation(volumetricDeduction);
+            }
+
+            // UpdateRenewal Term
+            if (renewalTerm != null)
+            {
+                ManageContractRenewalTerm(renewalTerm);
+            }
+
+            // remove Invoice Confugration
+            ContractInvoiceConfiguration?.RemoveCalendarOverrides(removeCalendarOverrides, deleteCalendar);
+            ValidateContractDates(true);
+            if (oldEndDate != EndDate)
+            {
+                Record(new ContractEndDateChangedEvent(Id, oldEndDate, EndDate, (short)ServiceTypeId));
+                Record(new ContractEndDateChangedNotification(this, user.FirstName, user.LastName));
+            }
+        }
+
+        public BaseContract Copy(
+            CopyContractTransition transition,
+            ContractServiceSubType serviceSubType,
+            IEnumerable<BusinessEntityAccount> businessEntityAccounts,
+            BusinessEntityAccount interCompanyAssetOwnerAccount = null)
+        {
+            var newContract = (BaseContract)MemberwiseClone();
+
+            newContract.Id = 0;
+            newContract.BusinessEntityAccounts = new List<BusinessEntityAccount>();
+            newContract.ContractInvoiceConfiguration = null;
+            newContract.Comments = new List<ContractComment>();
+            newContract.Revisions = new List<ContractRevision>();
+            newContract.AgreementType = TypeOfAgreement.Contract;
+            newContract.Status = ContractStatus.Inactive;
+            newContract.ApprovedBy = null;
+            newContract.ApprovedByUserId = null;
+            newContract.ApprovalDateTime = null;
+
+            newContract.Description = transition.Description;
+            newContract.Alias = transition.Alias;
+            newContract.AssetOwnerAccount = interCompanyAssetOwnerAccount;
+            newContract.InterCompanyCommercialAsset = null;
+            newContract.InterCompanyCommercialAssetId = transition.InterCompanyCommercialAssetId;
+            newContract.AssetOwnerAccountId = transition.AssetOwnerAccountId;
+            newContract.StartDate = transition.StartDate;
+            newContract.EndDate = transition.EndDate;
+            newContract.CreatedBy = transition.CreatedBy;
+            newContract.LastModifiedBy = transition.CreatedBy;
+            newContract.LastModifiedByUserId = transition.CreatedBy.Id;
+            newContract.CreatedByUserId = transition.CreatedBy.Id;
+            newContract.CreationDateTime = transition.CreationDateTime;
+            newContract.LastModificationDateTime = transition.CreationDateTime;
+            newContract.IsJointContract = transition.IsJointContract;
+            newContract.IsEDIEnabled = transition.IsEDIEnabled;
+            newContract.ContractGroupId = transition.ContractGroupId;
+
+            newContract.BusinessEntityAccounts.AddRange(businessEntityAccounts.ToList());
+            if (ExecutionDate != null)
+            {
+                newContract.ExecutionDate = transition.StartDate;
+            }
+
+            if (CommencementDate != null)
+            {
+                newContract.CommencementDate = transition.StartDate;
+            }
+
+            if (newContract.Customer.Id == Customer.Id)
+            {
+                newContract.CustomerContact = CustomerContact;
+                newContract.ReferenceContractNumber = ReferenceContractNumber;
+            }
+            else
+            {
+                newContract.CustomerContact = string.Empty;
+                newContract.ReferenceContractNumber = string.Empty;
+            }
+
+            if (newContract.Customer != null && newContract.CommercialAsset != null)
+            {
+                newContract.SmartCodeBase = $"{newContract.Customer.Code.ToUpper()}-{GetServiceTypeDisplayCode()}{serviceSubType.ShortCode}-{newContract.CommercialAsset.Code.ToUpper()}-{newContract.StartDate.Year}";
+                newContract.SmartCode = SmartCodeBase; // This is a computed field from database, it gets changes based on the sequence
+            }
+
+            newContract.ValidateRequiredField();
+            newContract.ValidateParticipatingCompany();
+            Verifier.Verify(newContract.AreBusinessEntityAccountsAvailableForThisContractInThisAssetGroup(newContract.AssetGroupId, newContract.BusinessEntityAccounts.Select(x => x.Id).ToList()));
+            Verifier.Verify(newContract.AreInterCompanyAssetOwnerAccountsAvailableForThisContractInThisAssetGroup(newContract.AssetGroupId, newContract.AssetOwnerAccountId));
+            newContract.ValidateBillableContract(serviceSubType.IsBillable);
+            newContract.ValidateBillableAccounts();
+            newContract.ValidateRateSheetBillable();
+            newContract.ValidateAccountWhenRateSheetBillableAndContractBillable();
+            newContract.ValidateIfIsEDIEnabledCanBeTrue();
+            newContract.ValidateContractGroupDateBoundaries();
+            newContract.ValidateContractGroupAssociationsForCommercialAssets();
+            newContract.ValidateContractGroupAssociationsForCustomer();
+
+            if (newContract.Customer.Id != Customer.Id)
+            {
+                Verifier.Verify(!newContract.IsContractHavingContractFacilityGroups(), "CannotCopyContractHavingContractFacilityGroupAcrossShippers", VerificationMessage.Contract.CannotCopyContractHavingContractFacilityGroupAcrossShippers);
+            }
+
+            // Copy All Active Volumetric Deduction as Inactive
+            newContract.VolumeDeductions = new List<ContractVolumeDeduction>();
+            var volumeDeductionNumber = 1;
+            foreach (var volumeDeduction in VolumeDeductions)
+            {
+                var deduction = volumeDeduction.Copy(newContract.CreatedBy, newContract.CreationDateTime, newContract.StartDate, volumeDeductionNumber);
+                newContract.VolumeDeductions.Add(deduction);
+                volumeDeductionNumber++;
+            }
+
+            // Copy Contract clauses
+            newContract.ContractClauses = new List<ContractClause>();
+            newContract.ContractClauses.AddRange(ContractClauses);
+
+            // Copy all active fees as inactive.
+            var feeSequenceNumber = 1;
+            bool copyFacilityGroups = newContract.Customer.Id == Customer.Id;
+            newContract.Fees = new List<Fee>();
+            foreach (var fee in Fees)
+            {
+                newContract.Fees.Add(fee.Copy(newContract.CreatedBy, newContract.CreationDateTime, newContract.StartDate, feeSequenceNumber, copyFacilityGroups, transition.CustomerAccountIds.FirstOrDefault(), newContract.Customer.Id == Customer.Id ? 0 : newContract.Customer.Id, newContract.SmartCodeBase));
+                feeSequenceNumber++;
+            }
+
+            newContract.ScheduledNotifications = new List<ScheduledNotification>();
+            newContract.ParticipatingCompanies = new List<AgreementParticipatingCompany>();
+            return newContract;
+        }
+
+        public void CopyDocument(BaseContract newContract, long existingContractId, IHandleDocuments documentStore)
+        {
+            var entityType = newContract.GetEntityType();
+            Expression<Func<Document, bool>> selector = d => d.DocumentEntityAssociation.EntityId == existingContractId
+                && d.DocumentEntityAssociation.Type == entityType;
+
+            var documents = documentStore.FindDocuments(selector, DocumentOptions.None);
+            foreach (var item in documents)
+            {
+                CreateDocument(item, newContract, documentStore);
+            }
+        }
+
+        public void CopyInvoiceConfiguration(BaseContract newContractDetail)
+        {
+            if (ContractInvoiceConfiguration != null)
+            {
+                newContractDetail.ContractInvoiceConfiguration = ContractInvoiceConfiguration.Copy(newContractDetail);
+            }
+        }
+
+        public void CopyParticipatingCompanies(BaseContract newContract)
+        {
+            if (IsJointContract && ParticipatingCompanies != null)
+            {
+                newContract.ParticipatingCompanies = new List<AgreementParticipatingCompany>();
+                foreach (var pCompany in ParticipatingCompanies)
+                {
+                    var participatingCompany = pCompany.Copy(newContract.Id);
+                    newContract.ParticipatingCompanies.Add(participatingCompany);
+                }
+            }
+        }
+
+        public virtual void CreateDeficiencyFee(ContractDeficiencyFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(IsBillable, "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new ContractDeficiencyFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public string CreateEmailBody(ScheduledNotification scheduledNotification)
+        {
+            var body = new StringBuilder($"Contract <a href=\"/Contracts/Contracts/Details/{scheduledNotification.ContractId}\">{SmartCode}</a><br/>")
+                       .Append("Contract Name : ")
+                       .Append(Description)
+                       .Append("<br/><br/>")
+                       .Append(scheduledNotification.MessageBody)
+                       .Append("<br/></strong></p>");
+
+            return body.ToString();
+        }
+
+        public virtual void CreateEventBasedFee(EventBasedFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(IsBillable, "FeeNonBillable", ContractResources.FeeNonBillable);
+
+            Verifier.Verify(!EventFeeForSameEventFeeSubTypeAlreadyExist(transition), "EventFeeWithSameEventFeeSubTypeAlreadyExist", ContractResources.EventFeeWithSameEventFeeSubTypeAlreadyExist);
+
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new EventBasedFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public virtual void CreateExcessVolumeFee(ContractExcessVolumeFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(IsBillable, "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new ContractExcessVolumeFee(transition, Fees.GenerateNextFeeSequence(), 0);
+
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public virtual void CreateFlatFee(FlatFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(CheckBillability(transition.FeeType), "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new VolumeFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public virtual void UpdateVolumeFeeLaycanAttributes(long id, short?[] laycanTypeIds, short?[] vesselTypeIds, short?[] vesselSizeIds)
+        {
+            if (Fees.Where(x => (x.FeeType == FeeType.Flat || x.FeeType == FeeType.JointFlat || x.FeeType == FeeType.Tiered || x.FeeType == FeeType.JointTiered)).ToList().Any())
+            {
+                var fee = Fees.OfType<VolumeFee>().Single(a => a.Id == id);
+                fee.UpdateLaycanAttributes(id, laycanTypeIds, vesselTypeIds, vesselSizeIds);
+            }
+        }
+
+        public virtual void CopyLaycanAttributes(IEnumerable<Fee> existingFees)
+        {
+            var ids = existingFees.Select(x => x.Id).ToList();
+
+            //// Add Laycan Type data in xref table for Flat and Tiered Fee
+            if (Fees.Where(x => (x.FeeType == FeeType.Flat || x.FeeType == FeeType.Tiered || x.FeeType == FeeType.JointFlat || x.FeeType == FeeType.JointTiered)).ToList().Any())
+            {
+                var volumeFees = Fees.OfType<VolumeFee>().Where(x => ids.Contains(x.PreviousFeeId));
+
+                foreach (var fee in volumeFees)
+                {
+                    var existingFee = existingFees.OfType<VolumeFee>().First(x => x.Id == fee.PreviousFeeId);
+                    var laycanTypeIds = existingFee.LaycanTypes.Select(x => (short?)x.LaycanType).ToArray();
+                    var vesselTypeIds = existingFee.VesselTypes.Select(x => (short?)x.VesselType).ToArray();
+                    var vesselSizeIds = existingFee.VesselSizes.Select(x => (short?)x.VesselSize).ToArray();
+
+                    fee.UpdateLaycanAttributes(fee.Id, laycanTypeIds, vesselTypeIds, vesselSizeIds);
+                }
+            }
+
+            //// Add Laycan Type data in xref table for Blending Fee
+            if (Fees.Where(x => x.FeeType == FeeType.Blending).ToList().Any())
+            {
+                var blendingFees = Fees.OfType<ContractBlendingFee>().Where(x => ids.Contains(x.PreviousFeeId));
+
+                foreach (var fee in blendingFees)
+                {
+                    var existingFee = existingFees.OfType<ContractBlendingFee>().First(x => x.Id == fee.PreviousFeeId);
+                    var laycanTypeIds = existingFee.LaycanTypes.Select(x => (short?)x.LaycanType).ToArray();
+                    var vesselTypeIds = existingFee.VesselTypes.Select(x => (short?)x.VesselType).ToArray();
+                    var vesselSizeIds = existingFee.VesselSizes.Select(x => (short?)x.VesselSize).ToArray();
+
+                    fee.UpdateLaycanAttributes(fee.Id, laycanTypeIds, vesselTypeIds, vesselSizeIds);
+                }
+            }
+        }
+
+        public virtual void CreateBlendingFee(CreateBlendingFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(IsBillable, "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new ContractBlendingFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public virtual void UpdateBlendingFeeLaycanAttributes(long id, short?[] laycanTypeIds, short?[] vesselTypeIds, short?[] vesselSizeIds)
+        {
+            if (Fees.Where(x => x.FeeType == FeeType.Blending).ToList().Any())
+            {
+                var fee = Fees.OfType<ContractBlendingFee>().Single(a => a.Id == id);
+                fee.UpdateLaycanAttributes(id, laycanTypeIds, vesselTypeIds, vesselSizeIds);
+            }
+        }
+
+        public virtual void CreatePurchaseSaleFee(PurchaseSaleFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(IsBillable, "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new VolumeFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public virtual void CreateTieredFee(TieredFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(CheckBillability(transition.FeeType), "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            ValidateFeeDateWithVolumeTierPeriod(transition.StartDate, transition.EndDate, transition.VolumeTiers);
+            var fee = new VolumeFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public virtual void CreateTimeBasedFee(ContractTimeBasedFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            Verifier.Verify(IsBillable, "FeeNonBillable", ContractResources.FeeNonBillable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = new ContractTimeBasedFee(transition, Fees.GenerateNextFeeSequence(), 0);
+            Fees.Add(fee);
+            UpdateFeesToNotLatestVersion(fee);
+        }
+
+        public void CreateVolumetricDeduction(ContractVolumDeductionTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            ValidateDeductionDateRange(transition.StartDate, transition.EndDate).Verify();
+            Verifier.Verify(IsBillable, "DeductionNonBillable", ContractResources.DeductionNonBillable);
+            SetDeductionNumber(transition);
+            var deduction = new ContractVolumeDeduction(transition);
+            ValidateUniqueness(deduction);
+            VolumeDeductions.Add(deduction);
+            UpdateDeductionToNotLatestVersion(deduction);
+        }
+
+        public void DeleteComment(long commentId)
+        {
+            var comment = Comments.Single(c => c.Id == commentId);
+            Verifier.Verify(comment != null, ContractHeaderCatalog.ContractCommentNotFound());
+            comment.Delete();
+        }
+
+        public void DeleteRevision(long revisionId)
+        {
+            var revision = Revisions.Single(c => c.Id == revisionId);
+            Verifier.Verify(revision != null, ContractHeaderCatalog.ContractRevisionNotFound());
+            revision.Delete();
+        }
+
+        public void DeleteContractRenewalTerm()
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            ContractRenewalTermId = null;
+            ContractRenewalTerm = null;
+            ContractEscalationPeriodId = null;
+            ContractEscalationPeriod = null;
+        }
+
+        public void DeleteFee(long feeId, string user, DateTime now)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+
+            var fee = Fees.Single(a => a.Id == feeId);
+            VerifyLatestFeeVersion(fee);
+
+            if (fee.TryDelete())
+            {
+                Fees.Remove(fee);
+                UpdateLatestFeeToLatestVersion(fee);
+                Record(new RemoveFeeFromAgreement(feeId, TypeOfAgreement.Contract, fee.FeeType));
+            }
+            else
+            {
+                Record(new ContractFeeCanceledNotification(this, fee, user, now));
+            }
+
+            if ((fee.IsPrimary
+                    || (fee.FeeCategory == FeeCategory.Secondary && ServiceTypeId == ContractServiceType.Transportation && ServiceSubTypeId == ServiceSubType.Exchange))
+                && (fee.IsActive || fee.FeeStatus == FeeStatus.Cancelled)
+                && IsActive)
+            {
+                ValidatePrimaryFeesEndDateWithContractDateRange(fee);
+            }
+
+            Record(new FeeDeletedEvent(feeId, (short)TypeOfAgreement.Contract, Id, now, (short)fee.FeeType, user));
+        }
+
+        public void DeleteVolumeTier(long tierId, long feeId, Action<VolumeFeeTierRate> deleteVolumeFeeTierRate)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var volumeFee = Fees.OfType<VolumeFee>().FirstOrDefault(d => d.Id == feeId);
+            VerifyLatestFeeVersion(volumeFee);
+            if (volumeFee.FeeStatus == FeeStatus.Active)
+            {
+                var fee = volumeFee.DeleteActiveVolumeFeeTier(tierId);
+                Fees.Add(fee);
+            }
+            else
+            {
+                volumeFee.DeleteTier(tierId, deleteVolumeFeeTierRate);
+            }
+        }
+
+        public void DeleteVolumetricDeduction(long id, Action<ContractVolumeDeduction> deleteDeduction)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var deduction = VolumeDeductions.Single(x => x.Id == id);
+
+            Verifier.Verify(IsLatestDeductionVersion(deduction), Guid.NewGuid().ToString(), VerificationMessage.VolumetricDeduction.DeleteLatestVersion);
+
+            if (deduction.IsActive)
+            {
+                deduction.Cancel();
+            }
+            else if (deduction.IsInActive)
+            {
+                UpdateLatestDeductionToLatestVersion(deduction);
+                deleteDeduction.Invoke(deduction);
+            }
+        }
+
+        public void EditComment(long commentId, User lastModifiedByUser, string text, DateTime lastModifiedDateTime)
+        {
+            var comment = Comments.Single(c => c.Id == commentId);
+            Verifier.Verify(comment != null, ContractHeaderCatalog.ContractCommentNotFound());
+            comment.Update(lastModifiedByUser, text, lastModifiedDateTime);
+            Verifier.Verify(comment.Text.Length <= 255, ContractHeaderCatalog.ContractCommentShouldNotExceedMaxLimit());
+        }
+
+        public void EditRevision(long revisionId, User lastModifiedByUser, string text, DateTime lastModifiedDateTime)
+        {
+            var revision = Revisions.Single(c => c.Id == revisionId);
+            Verifier.Verify(revision != null, ContractHeaderCatalog.ContractRevisionNotFound());
+            revision.Update(lastModifiedByUser, text, lastModifiedDateTime);
+            Verifier.Verify(revision.Text.Length <= 255, ContractHeaderCatalog.ContractRevisionShouldNotExceedMaxLimit());
+        }
+
+        public void UpdateContractGroup(long? contractGroupId, User lastModifiedBy, DateTime lastModificationDateTime)
+        {
+            ContractGroupId = contractGroupId;
+            LastModifiedBy = lastModifiedBy;
+            LastModificationDateTime = lastModificationDateTime;
+        }
+
+        public void EndDateDeduction(long id, DateTime? endDate, User user, DateTime now)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var volumetricDeduction = VolumeDeductions.Single(x => x.Id == id);
+            volumetricDeduction.SetEndDate(endDate, user, now);
+            EndDateDeductionValidation(volumetricDeduction);
+        }
+
+        public void EndDateFee(long feeId, DateTime? endDate, User user, DateTime now)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.Single(a => a.Id == feeId);
+            fee.SetEndDate(endDate, EndDate, user, now);
+            EndDateFeeValidation(fee);
+        }
+
+        public virtual void ExpireContract(DateTime expiryDateTime)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var verifications = new List<Verification>
+            {
+                new Verification(Status == ContractStatus.Active, "Contract Expiry", ContractResources.InvalidContractStatusForExpiry),
+                new Verification(EndDate < expiryDateTime, "Contract Expiry", ContractResources.InvalidContractEndDateForExpiry)
+            };
+
+            Verifier.Verify(verifications);
+
+            var activeFees = Fees.Where(x => x.IsActive);
+            foreach (var fee in activeFees)
+            {
+                if (fee.EndDate == null || fee.EndDate > EndDate)
+                {
+                    ExtendFee(fee.Id, EndDate);
+                }
+            }
+
+            var activeDeductions = VolumeDeductions.Where(x => x.IsActive);
+            foreach (var volumeDeduction in activeDeductions)
+            {
+                if (volumeDeduction.EndDate == null || volumeDeduction.EndDate > EndDate)
+                {
+                    ExtendDeduction(volumeDeduction.Id, EndDate);
+                }
+            }
+
+            Status = ContractStatus.Expired;
+            Record(new ContractExpiredNotification(this, NowSingleton.Instance.Now()));
+        }
+
+        public Fee GetLatestFee()
+        {
+            var feeSequence = Fees.Max(y => y.FeeSequenceNumber);
+
+            return Fees.SingleOrDefault(x => x.FeeSequenceNumber == feeSequence && x.FeeVersion == 0);
+        }
+
+        public Fee GetLatestFeeByFeeNumber(long feeNumber)
+        {
+            var maxfeeVersion = Fees.Where(d => d.FeeSequenceNumber == feeNumber).Max(y => y.FeeVersion);
+
+            return Fees.SingleOrDefault(x => x.FeeSequenceNumber == feeNumber && x.FeeVersion == maxfeeVersion);
+        }
+
+        public void Initialize(CreateContractIntermediate intermediate)
+        {
+            var transition = intermediate;
+
+            // Customer accounts that are valid for the contract
+            BusinessEntityAccounts.AddRange(intermediate.BusinessEntityAccounts.ToList());
+            AssetOwnerAccount = intermediate.InterCompanyAssetOwnerAccount;
+            Description = transition.Description;
+            Alias = transition.Alias;
+            AssetGroupId = transition.AssetGroupId;
+
+            // Business Entity Id
+            AssetOwnerId = transition.AssetOwnerId;
+            AssetOwnerContact = transition.AssetOwnerContact;
+            CustomerContact = transition.CustomerContact;
+            ServiceSubTypeId = transition.ServiceSubTypeId;
+            ServiceTypeId = transition.ServiceTypeId;
+            ContractTermTypeId = transition.ContractTermTypeId;
+            StartDate = transition.StartDate;
+            EndDate = transition.EndDate;
+            ExecutionDate = transition.ExecutionDateTime;
+            CommencementDate = transition.CommencementDateTime;
+            ReferenceContractNumber = transition.ReferenceContractNumber;
+            ContractGroupId = transition.ContractGroupId;
+            InterCompanyCommercialAssetId = transition.InterCompanyCommercialAssetId;
+
+            // Business Entity Account Id
+            AssetOwnerAccountId = transition.AssetOwnerAccountId;
+            CommercialAssetId = transition.AssetId;
+            CommercialAsset = intermediate.CommercialAsset;
+            HasHoldback = intermediate.HasHoldback;
+            IsCycleBased = intermediate.IsCycleBased;
+            CreatedBy = intermediate.CreatedBy;
+            CreationDateTime = intermediate.Now;
+            LastModifiedBy = intermediate.CreatedBy;
+            LastModificationDateTime = intermediate.Now;
+            LastModifiedByUserId = intermediate.CreatedBy.Id;
+            CreatedByUserId = intermediate.CreatedBy.Id;
+            ContractGroup = transition.ContractGroup;
+            IsBillable = transition.IsBillable;
+            IsRateSheetBillable = transition.IsRateSheetBillable;
+            IsTariffBillable = transition.IsTariffBillable;
+            IsJointContract = transition.IsJointContract;
+            IsEDIEnabled = transition.IsEDIEnabled;
+            IsMovementCommercialAssetUsedForAccountCoding = transition.IsMovementCommercialAssetUsedForAccountCoding;
+            if (Customer != null && CommercialAsset != null)
+            {
+                SmartCodeBase = $"{Customer.Code.ToUpper()}-{GetServiceTypeDisplayCode()}{intermediate.SubTypeShortCode}-{CommercialAsset.Code.ToUpper()}-{StartDate.Year}";
+                SmartCode = SmartCodeBase; // This is a computed field from database, it gets changes based on the sequence
+            }
+
+            if (intermediate.IsJointContract)
+            {
+                var companies = intermediate.ParticipatingCompanies?.Where(x => x.Id == 0).ToList();
+                companies?.ForEach(company => ParticipatingCompanies?.Add(company));
+                ValidateParticipatingCompany();
+            }
+
+            ValidateRequiredField();
+            Verifier.Verify(AreBusinessEntityAccountsAvailableForThisContractInThisAssetGroup(AssetGroupId, BusinessEntityAccounts.Select(x => x.Id).ToList()));
+            Verifier.Verify(AreInterCompanyAssetOwnerAccountsAvailableForThisContractInThisAssetGroup(AssetGroupId, transition.AssetOwnerAccountId));
+            ValidateBillableContract(intermediate.DefaultSubTypeBillableValue);
+            ValidateBillableAccounts();
+            ValidateRateSheetBillable();
+            ValidateAccountWhenRateSheetBillableAndContractBillable();
+            ValidateContractGroupDateBoundaries();
+            ValidateContractGroupAssociationsForCommercialAssets();
+            ValidateContractGroupAssociationsForCustomer();
+            ValidateIfIsEDIEnabledCanBeTrue();
+        }
+
+        public void ManageContractEscalationPeriod(ContractEscalationPeriod contractEscalationPeriod)
+        {
+            Verifier.Verify(Status != ContractStatus.Cancelled, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+
+            ContractEscalationPeriodId = contractEscalationPeriod.Id;
+            ContractEscalationPeriod = contractEscalationPeriod;
+        }
+
+        public void ManageContractRenewalTerm(ContractRenewalTerm contractRenewalTerm)
+        {
+            Verifier.Verify(Status != ContractStatus.Cancelled, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            contractRenewalTerm.IsRenewalTermValid(CommencementDate ?? StartDate, EndDate);
+            ContractRenewalTermId = contractRenewalTerm.Id;
+            ContractRenewalTerm = contractRenewalTerm;
+        }
+
+        public void ManageInvoiceConfiguration(
+            InvoicePaymentTerm invoicePaymentTerm,
+            List<InvoiceCalendarConfiguration> invoiceCalendarConfigurations,
+            List<Tuple<ServiceFeeTypeVO, InvoicePaymentTerm>> serviceFeeTypeInvoicePaymentTerms,
+            Action<IList<ContractInvoiceConfigurationInvoiceCalendarConfiguration>> deleteCalendars,
+            Action<IList<ContractInvoiceConfigurationServiceFeeType>> deleteServiceTypes)
+        {
+            if (ContractInvoiceConfiguration == null)
+            {
+                ContractInvoiceConfiguration = new ContractInvoiceConfiguration();
+            }
+
+            ContractInvoiceConfiguration.Update(invoicePaymentTerm);
+            ContractInvoiceConfiguration.UpdateInvoiceCalendarOverride(invoiceCalendarConfigurations, deleteCalendars);
+            ContractInvoiceConfiguration.UpdateServiceFeeTypeOverride(serviceFeeTypeInvoicePaymentTerms, deleteServiceTypes);
+            ContractInvoiceConfiguration.ValidateDomain(StartDate, EndDate);
+        }
+
+        public void ModifyContractClauses(IList<ContractClause> clauses)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            if (ContractClauses.Count == 0)
+            {
+                ContractClauses.AddRange(clauses);
+
+                return;
+            }
+
+            var addedClauses = clauses.Where(p => ContractClauses.All(p2 => p2.Id != p.Id));
+
+            // peopleList2.Except(peopleList1)
+            var removedClauses = ContractClauses.Where(p => clauses.All(p2 => p2.Id != p.Id));
+
+            ContractClauses.RemoveWhere(x => removedClauses.Any());
+            ContractClauses.AddRange(addedClauses);
+        }
+
+        public void RaiseEscalationAlert(DateTime currentDate)
+        {
+            if (ContractEscalationPeriod != null && ValidateEscalationAlertShouldRaise(currentDate))
+            {
+                Record(new EscalationPeriodAlert(this, currentDate));
+            }
+        }
+
+        public virtual void RequestActivation(User requestingUser, DateTime now)
+        {
+            Verifier.Verify(new Verification(Status == ContractStatus.Inactive, "OnlyInactiveContractActivate", $"Contract Id - {Id}: {VerificationMessage.Contract.OnlyInactiveTariffActivate}"));
+            ValidateContract();
+
+            // Only want to check inter intra on request activation
+            foreach (var fee in Fees)
+            {
+                fee.ValidateInterIntra();
+            }
+            Record(new RequestContractActivationAlert(this, now, requestingUser));
+        }
+
+        public void RequestAllInactiveFeeAndVolumetricDeductionActivation(User user, DateTime now)
+        {
+            Verifier.Verify(Status == ContractStatus.Active || Status == ContractStatus.Inactive, ContractHeaderCatalog.ContractFeeAndVolumetricDeductionRequestActivation());
+            var inactiveFees = Fees.Where(d => d.FeeStatus == FeeStatus.Inactive);
+            var inactiveVolumetricDeduction = VolumeDeductions.Where(d => d.VolumeDeductionStatus == VolumeDeductionStatus.Inactive);
+            RequestActivationAllFees(inactiveFees, now, user);
+            RequestActivationAllVolumetricDeductions(inactiveVolumetricDeduction, now, user);
+        }
+
+        public void RequestFeeActivation(long feeId, User user, DateTime now)
+        {
+            Verifier.Verify(Status == ContractStatus.Active || Status == ContractStatus.Inactive, ContractHeaderCatalog.ContractFeeAndVolumetricDeductionRequestActivation());
+            var fee = Fees.SingleOrDefault(d => d.Id == feeId);
+            RequestActivationByFee(fee, now, user);
+        }
+
+        public virtual void Update(EditContractIntermediate intermediate)
+        {
+            UpdateContract(intermediate);
+        }
+
+        public virtual void Update(EditContractIntermediate intermediate, Action<AgreementParticipatingCompany> deleteCompany)
+        {
+            if (!IsActive && intermediate.IsJointContract)
+            {
+                UpdateParticipatingCompanies(intermediate.ParticipatingCompanies, deleteCompany);
+            }
+
+            UpdateContract(intermediate);
+        }
+
+        public virtual void UpdateDeficiencyFee(ContractDeficiencyFeeTransition transition, Action<MarketPriceAverageConfiguration> deleteAverageFunction)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            ValidateProductConversionFactors(transition);
+            var fee = Fees.OfType<ContractDeficiencyFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            VerifyLatestFeeVersion(fee);
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.Update(transition, deleteAverageFunction);
+            }
+        }
+
+        public virtual void UpdateEventBasedFee(EventBasedFeeTransition transition, Action<MarketPriceAverageConfiguration> deleteAverageConfiguration)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            var fee = Fees.OfType<EventBasedFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(!EventFeeForSameEventFeeSubTypeAlreadyExist(transition), "EventFeeWithSameEventFeeSubTypeAlreadyExist", ContractResources.EventFeeWithSameEventFeeSubTypeAlreadyExist);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            VerifyLatestFeeVersion(fee);
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.ContractEventFeeTierHeader.ContractEventFeeTierDetails.ForEach(x => Record(new RemoveEventBasedTerminalFeeTierDetail(x.Id)));
+                fee.Update(transition, deleteAverageConfiguration);
+            }
+        }
+
+        public virtual void UpdateExcessVolumeFee(ContractExcessVolumeFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+
+            var fee = Fees.OfType<ContractExcessVolumeFee>().Single(a => a.Id == transition.Id);
+            VerifyLatestFeeVersion(fee);
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.Update(transition);
+            }
+        }
+
+        public virtual void UpdateFlatFee(FlatFeeTransition transition, Action<MarketPriceAverageConfiguration> deleteAverageConfiguration)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.OfType<VolumeFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            VerifyLatestFeeVersion(fee);
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.Update(transition, deleteAverageConfiguration);
+            }
+        }
+
+        public virtual void UpdateBlendingFee(EditBlendingFeeTransition transition, Action<MarketPriceAverageConfiguration> deleteAverageConfiguration)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.OfType<ContractBlendingFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            VerifyLatestFeeVersion(fee);
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.Update(transition, deleteAverageConfiguration);
+            }
+        }
+
+        public virtual void UpdatePurchaseSaleFee(PurchaseSaleFeeTransition transition, Action<MarketPriceAverageConfiguration> deleteAverageConfiguration)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.OfType<VolumeFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            VerifyLatestFeeVersion(fee);
+
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.Update(transition, deleteAverageConfiguration);
+            }
+        }
+
+        public virtual void UpdateTieredFee(TieredFeeTransition transition)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.OfType<VolumeFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, transition.EndDate);
+            ValidateFeeDateWithVolumeTierPeriod(transition.StartDate, transition.EndDate, transition.VolumeTiers);
+            VerifyLatestFeeVersion(fee);
+            if (fee.IsActive)
+            {
+                var newFeeVersion = fee.Copy(transition);
+                Fees.Add(newFeeVersion);
+                fee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                fee.Update(transition);
+            }
+        }
+
+        public virtual void UpdateTimeBasedFee(ContractTimeBasedFeeTransition transition, Action<IList<AmortizationSchedule>> deleteAmortizationSchedules, Action<MarketPriceAverageConfiguration> deleteAverageConfiguration)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.OfType<ContractTimeBasedFee>().Single(a => a.Id == transition.Id);
+            Verifier.Verify(new Verification(fee.FeeStatus.IsActiveOrInactive(), "IncorrectStatusToEdit", VerificationMessage.IncorrectStatusToEdit));
+            ValidateFeeDateRangeWithContractDate(transition.StartDate, fee.EndDate);
+            fee.Update(transition, deleteAverageConfiguration);
+            if (fee.FeeStatus == FeeStatus.Active && Status == ContractStatus.Active)
+            {
+                ValidatePrimaryFeesEndDateWithContractDateRange(fee);
+            }
+
+            fee.ReCalculateAmortizationSchedule(StartDate, EndDate, deleteAmortizationSchedules);
+        }
+
+        public void UpdateVolumeTier(ContractTieredFeeRateTransition tier, long feeId, Action<MarketPriceAverageConfiguration> deleteAverageConfiguration)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var volumeFee = Fees.OfType<VolumeFee>().FirstOrDefault(d => d.Id == feeId);
+            VerifyLatestFeeVersion(volumeFee);
+            if (volumeFee.FeeStatus == FeeStatus.Active)
+            {
+                var fee = volumeFee.UpdateActiveVolumeFeeTier(tier, deleteAverageConfiguration);
+                Fees.Add(fee);
+                volumeFee.UpdateToNotLatestVersion();
+            }
+            else
+            {
+                volumeFee.UpdateTier(tier, deleteAverageConfiguration);
+            }
+        }
+
+        public void UpdateVolumetricDeduction(ContractVolumDeductionTransition transition, Action<VolumeDeductionDetail> deletetier)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            ValidateDeductionDateRange(transition.StartDate, transition.EndDate).Verify();
+            var volumetricDeduction = VolumeDeductions.Single(x => x.Id == transition.Id);
+            if (volumetricDeduction.IsActive)
+            {
+                SetDeductionVersion(volumetricDeduction, transition);
+                var deduction = new ContractVolumeDeduction(transition);
+                volumetricDeduction.UpdateToNotLatestVersion();
+                ValidateUniqueness(deduction);
+                VolumeDeductions.Add(deduction);
+            }
+            else if (volumetricDeduction.IsInActive)
+            {
+                volumetricDeduction.Update(transition, deletetier);
+                ValidateUniqueness(volumetricDeduction);
+            }
+            else
+            {
+                Verifier.Verify(new Verification(false, "InvalidStatusForEdit", "Deductions can be edited only on Active or Inactive status"));
+            }
+        }
+
+        public void RaiseRenewalTermNotification(DateTime currentDate)
+        {
+            bool notificationToBeSend = false;
+
+            switch (ContractRenewalTerm.NoticePeriodFrequencyPeriodType)
+            {
+                case RenewalFrequencyPeriod.Day:
+                    notificationToBeSend = ContractRenewalTerm.NoticePeriod == EndDate.Date.Subtract(currentDate.Date).Days;
+
+                    break;
+                case RenewalFrequencyPeriod.Month:
+                    var noticePeriodMonthDate = EndDate.Date.AddMonths(ContractRenewalTerm.NoticePeriod * -1);
+                    noticePeriodMonthDate = (EndDate.GetLastDayOfMonth() == EndDate)
+                        ? noticePeriodMonthDate.GetLastDayOfMonth()
+                        : noticePeriodMonthDate;
+
+                    notificationToBeSend = currentDate.Date.Equals(noticePeriodMonthDate);
+
+                    break;
+                case RenewalFrequencyPeriod.Year:
+                    var noticePeriodYearDate = EndDate.Date.AddYears(ContractRenewalTerm.NoticePeriod * -1);
+                    noticePeriodYearDate = (EndDate.GetLastDayOfMonth() == EndDate)
+                        ? noticePeriodYearDate.GetLastDayOfMonth()
+                        : noticePeriodYearDate;
+
+                    notificationToBeSend = currentDate.Date.Equals(noticePeriodYearDate);
+
+                    break;
+                default:
+                    notificationToBeSend = false;
+
+                    break;
+            }
+
+            if (notificationToBeSend)
+            {
+                Record(new RenewalTermNoticePeriodNotification(this));
+            }
+        }
+
+        public void ValidateContractGroupDateBoundaries()
+        {
+            if (ContractGroup != null)
+            {
+                var isStartDateBetweenContractGroupDates = StartDate.Date.IsBetween(ContractGroup.EffectiveFromDate, ContractGroup.EffectiveToDate, true);
+                var isEndDateBetweenContractGroupDates = EndDate.Date.IsBetween(ContractGroup.EffectiveFromDate, ContractGroup.EffectiveToDate, true);
+                var isContractGroupValidationType = ServiceTypeId == ContractServiceType.Storage || ServiceTypeId == ContractServiceType.Transportation || ServiceTypeId == ContractServiceType.TransportationTariff || ServiceTypeId == ContractServiceType.TerminalServiceAgreement;
+                if (isContractGroupValidationType && !isStartDateBetweenContractGroupDates)
+                {
+                    Verifier.Verify(false, "NoDateBetweenContractGroupPeriod", VerificationMessage.Contract.NoDateBetweenContractGroupPeriod);
+                }
+
+                Verifier.Verify(isEndDateBetweenContractGroupDates, "NoDateBetweenContractGroupPeriod", VerificationMessage.Contract.NoDateBetweenContractGroupPeriod);
+            }
+        }
+
+        public void ValidateContractGroupAssociationsForCustomer()
+        {
+            if (ContractGroup != null && ContractGroup.CustomerId != Customer.Id)
+            {
+                Verifier.Verify(false, "CustomerMismatchWithContractGroup", VerificationMessage.Contract.CustomerMismatchWithContractGroup);
+            }
+        }
+
+        public void ValidateContractGroupAssociationsForCommercialAssets()
+        {
+            if (ContractGroup != null && !ContractGroup.CommercialAssetIds.Contains(CommercialAssetId))
+            {
+                Verifier.Verify(false, "CommercialAssetMismatchWithContractGroup", VerificationMessage.Contract.CommercialAssetMismatchWithContractGroup);
+            }
+        }
+
+        public void UpdateTieredFees(BaseContract newContract)
+        {
+            foreach (var fee in newContract.Fees.OfType<VolumeFee>())
+            {
+                if ((fee.FeeType == FeeType.Tiered || fee.FeeType == FeeType.JointTiered || fee.FeeType == FeeType.MultiTier) && fee.VolumeFeeTierRates.Any())
+                {
+                    long? volumeTierHeaderId = fee.VolumeFeeTierRates.FirstOrDefault().VolumeTierHeader.IsNotNull() ? fee.VolumeFeeTierRates.FirstOrDefault().VolumeTierHeader.Id : default;
+                    if (volumeTierHeaderId == 0)
+                    {
+                        continue;
+                    }
+
+                    fee.UpdateVolumeTierHeaderId(fee, (long)volumeTierHeaderId);
+                }
+            }
+        }
+
+        public virtual void ValidateAnyPrimaryFeeExistsForContractDateRange()
+        {
+            if (IsBillable)
+            {
+                Verifier.Verify(new Verification(AnyPrimaryFeeExists, "NoPrimaryActiveFee", ContractResources.NoPrimaryActiveFee));
+            }
+        }
+
+        protected IEnumerable<Verification> AreBusinessEntityAccountsAvailableForThisContractInThisAssetGroup(long assetGroupId, IList<long> businessEntityAccountIds)
+        {
+            var verifications = new List<Verification>();
+            foreach (var businessEntityAccountId in businessEntityAccountIds)
+            {
+                verifications.AddRange(IsBusinessEntityAccountAvailableForThisContractInThisAssetGroup(assetGroupId, businessEntityAccountId));
+            }
+
+            return verifications;
+        }
+
+        protected IEnumerable<Verification> AreInterCompanyAssetOwnerAccountsAvailableForThisContractInThisAssetGroup(long assetGroupId, long? interCompanyAssetOwnerAccountId)
+        {
+            var verifications = new List<Verification>();
+            if (interCompanyAssetOwnerAccountId.HasValue)
+            {
+                verifications.AddRange(IsInterCompanyAssetOwnerAccountAvailableForThisContractInThisAssetGroup(assetGroupId, interCompanyAssetOwnerAccountId.Value));
+            }
+
+            return verifications;
+        }
+
+        protected string GetServiceTypeDisplayCode()
+        {
+            var displayCode = string.Empty;
+            switch (ServiceTypeId)
+            {
+                case ContractServiceType.Transportation:
+                    displayCode = "TR";
+
+                    break;
+                case ContractServiceType.TransportationTariff:
+                    displayCode = "TT";
+
+                    break;
+                case ContractServiceType.TerminalServiceAgreement:
+                    displayCode = "TS";
+
+                    break;
+                case ContractServiceType.Storage:
+                    displayCode = "ST";
+
+                    break;
+                case ContractServiceType.Processing:
+                    displayCode = "PR";
+
+                    break;
+                case ContractServiceType.Purchase:
+                    displayCode = "PS";
+
+                    break;
+                case ContractServiceType.Sale:
+                    displayCode = "SL";
+
+                    break;
+                case ContractServiceType.Miscellaneous:
+                    displayCode = "MI";
+
+                    break;
+            }
+
+            return displayCode;
+        }
+
+        protected IEnumerable<Verification> IsBusinessEntityAccountAvailableForThisContractInThisAssetGroup(long assetGroupId, long businessEntityAccountId)
+        {
+            var verifications = new List<Verification>();
+
+            // find the BusinessEntityAccount we are trying to validate
+            var businessEntityAccount = BusinessEntityAccounts.First(x => x.Id == businessEntityAccountId);
+            var weHaveAValidTemporal = false;
+
+            // find all the associations
+            foreach (var temporal in businessEntityAccount.Associations.Where(x => x.AssetGroup.Id == assetGroupId && x.Account.Id == businessEntityAccountId))
+            {
+                // if this is a DHA contract check for account holder type.
+                if (ServiceSubTypeId == ServiceSubType.Dha)
+                {
+                    if (temporal.Type == BusinessEntityAccountType.HoldingAccount)
+                    {
+                        // is this temporal recored greater than the contract dates?
+                        if (temporal.EffectiveFrom <= StartDate && temporal.EffectiveTo >= EndDate)
+                        {
+                            weHaveAValidTemporal = true;
+                        }
+                        else
+                        {
+                            // throw the temporal recored is not valid for the contract dates
+                            verifications.Add(new Verification(false, "Temporal Associations", string.Format(VerificationMessage.TemporalAssociationDoesNotOverlapContractDates, businessEntityAccount.LongName, temporal.AssetGroup.Name)));
+                        }
+                    }
+                }
+                else
+                {
+                    // find the customer temporal associations
+                    if (temporal.Type == BusinessEntityAccountType.Customer || temporal.Type == BusinessEntityAccountType.Exchange)
+                    {
+                        // is this temporal recored greater than the contract dates?
+                        if (temporal.EffectiveFrom <= StartDate && temporal.EffectiveTo >= EndDate)
+                        {
+                            weHaveAValidTemporal = true;
+                        }
+                        else
+                        {
+                            // throw the temporal recored is not valid for the contract dates
+                            verifications.Add(new Verification(false, "Temporal Associations", string.Format(VerificationMessage.TemporalAssociationDoesNotOverlapContractDates, businessEntityAccount.LongName, temporal.AssetGroup.Name)));
+                        }
+                    }
+                }
+            }
+
+            if (!weHaveAValidTemporal)
+            {
+                verifications.Add(new Verification(false, "Temporal Associations", string.Format(VerificationMessage.NoTemporalAssociationsIsACustomer, businessEntityAccount.ShortName)));
+            }
+
+            return verifications;
+        }
+
+        protected IEnumerable<Verification> IsInterCompanyAssetOwnerAccountAvailableForThisContractInThisAssetGroup(long assetGroupId, long businessEntityAccountId)
+        {
+            var verifications = new List<Verification>();
+
+            // find the BusinessEntityAccount we are trying to validate
+            var businessEntityAccount = AssetOwnerAccount;
+            var weHaveAValidTemporal = false;
+
+            // find all the associations
+            foreach (var temporal in businessEntityAccount.Associations.Where(x => x.AssetGroup.Id == assetGroupId && x.Account.Id == businessEntityAccountId))
+            {
+                // if this is a DHA contract check for account holder type.
+                if (ServiceSubTypeId == ServiceSubType.Dha)
+                {
+                    if (temporal.Type == BusinessEntityAccountType.HoldingAccount)
+                    {
+                        // is this temporal recored greater than the contract dates?
+                        if (temporal.EffectiveFrom <= StartDate && temporal.EffectiveTo >= EndDate)
+                        {
+                            weHaveAValidTemporal = true;
+                        }
+                        else
+                        {
+                            // throw the temporal recored is not valid for the contract dates
+                            verifications.Add(new Verification(false, "Temporal Associations", string.Format(VerificationMessage.TemporalAssociationDoesNotOverlapContractDatesForInterCompany, businessEntityAccount.LongName, temporal.AssetGroup.Name)));
+                        }
+                    }
+                }
+                else
+                {
+                    // find the customer temporal associations
+                    if (temporal.Type == BusinessEntityAccountType.InterCompanyAccount)
+                    {
+                        // is this temporal recored greater than the contract dates?
+                        if (temporal.EffectiveFrom <= StartDate && temporal.EffectiveTo >= EndDate)
+                        {
+                            weHaveAValidTemporal = true;
+                        }
+                        else
+                        {
+                            // throw the temporal recored is not valid for the contract dates
+                            verifications.Add(new Verification(false, "Temporal Associations", string.Format(VerificationMessage.TemporalAssociationDoesNotOverlapContractDatesForInterCompany, businessEntityAccount.LongName, temporal.AssetGroup.Name)));
+                        }
+                    }
+                }
+            }
+
+            if (!weHaveAValidTemporal)
+            {
+                verifications.Add(new Verification(false, "Temporal Associations", string.Format(VerificationMessage.NoTemporalAssociationsIsAInterCompany, businessEntityAccount.ShortName)));
+            }
+
+            return verifications;
+        }
+
+        protected void ValidateAccountWhenRateSheetBillableAndContractBillable()
+        {
+            if (!IsBillable)
+            {
+                if (IsRateSheetBillable || IsTariffBillable)
+                {
+                    Verifier.Verify(BusinessEntityAccounts.All(d => d.IsBillable), "AccountBillable", ContractResources.ContractAndRateSheetBillable);
+                }
+            }
+        }
+
+        protected void ValidateBillableAccounts()
+        {
+            if (IsBillable)
+            {
+                Verifier.Verify(BusinessEntityAccounts.All(d => d.IsBillable), "AccountBillable", ContractResources.ContractAccountBillable);
+            }
+        }
+
+        protected void ValidateBillableContract(bool? defaultSubTypeBillableValue)
+        {
+            if (defaultSubTypeBillableValue == null)
+            {
+                return;
+            }
+
+            if (defaultSubTypeBillableValue.Value && IsBillable == false)
+            {
+                Verifier.Verify(false, "Non-Billable", string.Format(ContractResources.ContractNonBillable, ServiceTypeId, ServiceSubTypeId.GetEnumDescription()));
+            }
+
+            if (defaultSubTypeBillableValue.Value == false && IsBillable)
+            {
+                Verifier.Verify(false, "Billable", string.Format(ContractResources.ContractBillable, ServiceTypeId, ServiceSubTypeId.GetEnumDescription()));
+            }
+        }
+
+        protected void ValidateContractDates(bool activeFeesOnly = false)
+        {
+            var feesToValidate = activeFeesOnly
+                ? (List<Fee>)ActiveFees.ToList()
+                : Fees;
+
+            foreach (var fee in feesToValidate)
+            {
+                ValidateFeeDateRangeWithContractDate(fee.StartDate, fee.EndDate, fee.FeeNumber);
+            }
+
+            foreach (var deduction in VolumeDeductions)
+            {
+                Verifier.Verify(ValidateDeductionDateRange(deduction.StartDate, deduction.EndDate, deduction.DeductionNumber));
+            }
+
+            ContractInvoiceConfiguration?.ValidateYear(StartDate, EndDate);
+            if (EndDate >= NowSingleton.Instance.Now())
+            {
+                ContractRenewalTerm?.IsRenewalTermValid(CommencementDate ?? StartDate, EndDate);
+            }
+        }
+
+        protected void ValidateContract()
+        {
+            ValidateRequiredField();
+            ValidateParticipatingCompany();
+            ValidateContractDates();
+
+            Verifier.Verify(AreBusinessEntityAccountsAvailableForThisContractInThisAssetGroup(AssetGroupId, BusinessEntityAccounts.Select(x => x.Id).ToList()));
+            Verifier.Verify(AreInterCompanyAssetOwnerAccountsAvailableForThisContractInThisAssetGroup(AssetGroupId, AssetOwnerAccountId));
+        }
+
+        protected void ValidateRateSheetBillable()
+        {
+            if (!IsBillable)
+            {
+                return;
+            }
+
+            if (!IsRateSheetBillable && !IsTariffBillable)
+            {
+                Verifier.Verify(false, "RateSheetBillable", ContractResources.RateSheetBillable);
+            }
+        }
+
+        protected void ValidateRequiredField()
+        {
+            new List<Verification>
+                {
+                    // Required validations
+                    new Verification(!string.IsNullOrEmpty(Description), "Description", string.Format(VerificationMessage.FieldRequiredMessage, "Contract Description")),
+                    new Verification(AssetOwnerId > 0, "AssetOwnerId", string.Format(VerificationMessage.FieldRequiredMessage, "Asset Owner")),
+                    new Verification(ServiceSubTypeId > 0, "SubTypeId", string.Format(VerificationMessage.FieldRequiredMessage, "Service Sub Type")),
+                    new Verification(AssetGroupId > 0, "AssetGroupId", string.Format(VerificationMessage.FieldRequiredMessage, "Asset Group")),
+                    new Verification(ContractTermTypeId > 0, "TermTypeId", string.Format(VerificationMessage.FieldRequiredMessage, "Term Type")),
+                    new Verification(StartDate != DateTime.MinValue, "StartDate", string.Format(VerificationMessage.FieldRequiredMessage, "Start Date")),
+                    new Verification(EndDate != DateTime.MinValue, "EndDate", string.Format(VerificationMessage.FieldRequiredMessage, "End Date")),
+                    new Verification(BusinessEntityAccounts.IsNotNullOrEmpty(), "CustomerAccountIds", string.Format(VerificationMessage.FieldRequiredMessage, "Customer Accounts")),
+                    new Verification(BusinessEntityAccounts.SelectMany(x => x.Associations).Any(), "BusinessEntityAccountAssociationTemporal", string.Format(VerificationMessage.FieldRequiredMessage, "Business Entity Account Association Temporals")),
+                    new Verification(!SmartCodeBase.IsNullOrWhiteSpace(), "SmartCode", string.Format(VerificationMessage.FieldRequiredMessage, "Smart Code")),
+                    new Verification(BusinessEntityAccounts.Count > 0, "CustomerAccountIds", string.Format(VerificationMessage.CustomerAccountRequired)),
+                    new Verification(CommercialAsset != null, "CommercialAsset", string.Format(VerificationMessage.FieldRequiredMessage, "Commercial Asset")),
+
+                    // Holdback validation
+                   new Verification(ServiceTypeId == ContractServiceType.Transportation || ServiceTypeId == ContractServiceType.TransportationTariff || HasHoldback == false, "HasHoldback", "Holdback is only permitted for transportation contracts."),
+
+                    // Date validations
+                    new Verification(EndDate > StartDate, "EndDate", VerificationMessage.EndDateValidation),
+                    new Verification(!ExecutionDate.HasValue || ExecutionDate <= EndDate, "ExecutionDate", VerificationMessage.ExecutionDateValidation)
+                }
+                .Verify();
+
+            // validate AssetOwner Account Required
+            var businessEntity = BusinessEntityAccounts.FirstOrDefault()?.Entity;
+            var isAssetOwner = businessEntity?.Type == BusinessEntityType.AssetOwner;
+            var isAssetOwnerAccount = BusinessEntityAccounts.Any(x => x.IsAssetOwnerAccount);
+            if (businessEntity != null && businessEntity.CreateOffsettingTransactionIndicator && isAssetOwner && isAssetOwnerAccount && IsBillable)
+            {
+                Verifier.Verify(new Verification(InterCompanyCommercialAssetId > 0, "IntercompanyAssetId", string.Format(VerificationMessage.InterCompanyAssetRequired)));
+            }
+
+            if ((businessEntity != null && businessEntity.CreateOffsettingTransactionIndicator && isAssetOwner && isAssetOwnerAccount) || IsJointContract)
+            {
+                Verifier.Verify(new Verification(AssetOwnerAccountId.GetValueOrDefault(0) > 0, "IntercompanyAccountId", string.Format(VerificationMessage.AssetOwnerAccountRequired)));
+            }
+        }
+
+        private bool CheckBillability(FeeType feeType)
+        {
+            if ((feeType == FeeType.Flat || feeType == FeeType.Tiered)
+                    && ServiceSubTypeId == ServiceSubType.Trade && IsTariffBillable)
+            {
+                return true;
+            }
+
+            return IsBillable;
+        }
+
+        private void AddScheduledNotification(ScheduledNotification scheduledNotification)
+        {
+            ScheduledNotifications.Add(scheduledNotification);
+        }
+
+        private void AssociateCustomerAccounts(IEnumerable<BusinessEntityAccount> customerAccounts)
+        {
+            var accounts = BusinessEntityAccounts.ToList();
+            var modifiedAccountIds = customerAccounts.Select(d => d.Id).ToList();
+            if (IsActive || Fees.Any())
+            {
+                foreach (var existingId in accounts.Select(d => d.Id))
+                {
+                    if (!modifiedAccountIds.Contains(existingId))
+                    {
+                        Verifier.Verify(false, "ValidateAccounts", "Can not remove an existing account as the contract is active or has fees in it.");
+                    }
+                }
+            }
+
+            BusinessEntityAccounts.Clear();
+            foreach (var customerAccount in customerAccounts.Where(customerAccount => BusinessEntityAccounts.All(x => x.Id != customerAccount.Id)))
+            {
+                BusinessEntityAccounts.Add(customerAccount);
+                if (!accounts.Contains(customerAccount))
+                {
+                    Record(new ContractAssociatedToCustomerAccountEvent(Id, customerAccount.Id));
+                }
+            }
+        }
+
+        private void CreateDocument(Document document, BaseContract agreement, IHandleDocuments documentStore)
+        {
+            if (document != null && document.MetaDatas != null)
+            {
+                var details = new DocumentDetails
+                {
+                    OriginalFileName = document.Details.OriginalFileName,
+                    MimeType = document.Details.MimeType,
+                    RetentionExpirationDateTime = DateTime.MaxValue
+                };
+
+                var category = new DocumentMetaData { Key = "Category", Value = document.MetaDatas.Single(x => x.Key == "Category").Value };
+                var description = new DocumentMetaData { Key = "Description", Value = document.MetaDatas.Single(x => x.Key == "Description").Value };
+                var name = new DocumentMetaData { Key = "Name", Value = document.MetaDatas.Single(x => x.Key == "Name").Value };
+                var stream = new MemoryStream(document.Content.Data);
+                documentStore.CreateDocument(agreement, details, stream, category, description, name);
+            }
+        }
+
+        private void EndDateDeductionValidation(ContractVolumeDeduction volumetricDeduction)
+        {
+            if (IsInterestedInTimePart)
+            {
+                Verifier.Verify(new Verification(volumetricDeduction.EndDate.IsDateInRange(StartDate.Date, EndDate.Date), "EndDateNotInRange", $"Volumetric Deduction {volumetricDeduction.DeductionNumber} End Date must be within Contract Dates"));
+            }
+            else
+            {
+                Verifier.Verify(new Verification(volumetricDeduction.EndDate.IsDateInRange(StartDate, EndDate), "EndDateNotInRange", $"Volumetric Deduction {volumetricDeduction.DeductionNumber} End Date must be within Contract Dates"));
+            }
+        }
+
+        private void EndDateFeeValidation(Fee fee)
+        {
+            ValidateUniquenessOfDeficiencyFee(fee);
+            ValidateFeeDateRangeWithContractDate(fee.StartDate, fee.EndDate, fee.FeeNumber);
+
+            if ((fee.IsPrimary
+                    || (fee.FeeCategory == FeeCategory.Secondary && ServiceTypeId == ContractServiceType.Transportation && ServiceSubTypeId == ServiceSubType.Exchange))
+                && fee.IsActive
+                && IsActive)
+            {
+                ValidatePrimaryFeesEndDateWithContractDateRange(fee);
+            }
+        }
+
+        private void ExtendDeduction(long id, DateTime? endDate)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var volumetricDeduction = VolumeDeductions.Single(x => x.Id == id);
+            volumetricDeduction.SetEndDate(endDate);
+            EndDateDeductionValidation(volumetricDeduction);
+        }
+
+        private void ExtendFee(long feeId, DateTime? endDate)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+            var fee = Fees.Single(a => a.Id == feeId);
+            fee.SetEndDate(endDate, EndDate);
+            EndDateFeeValidation(fee);
+        }
+
+        private long GenerateNextVolumetricDeductionSequenceNumber()
+        {
+            return VolumeDeductions.Any()
+                ? VolumeDeductions.Max(d => d.VolumeDeductionNumber) + 1
+                : 1;
+        }
+
+        private short GenerateNextVolumetricDeductionVersion(long sequenceNumber)
+        {
+            var deductionsAllVersions = VolumeDeductions.Where(a => a.VolumeDeductionNumber == sequenceNumber);
+
+            return deductionsAllVersions.Any()
+                ? Convert.ToInt16(deductionsAllVersions.Max(d => d.Version) + 1)
+                : Convert.ToInt16(0);
+        }
+
+        private ContractVolumeDeduction GetPriorActiveDeduction(ContractVolumeDeduction contractVolumeDeduction)
+        {
+            var activeDeductions = VolumeDeductions.Where(c => c.VolumeDeductionStatus == VolumeDeductionStatus.Active);
+
+            return activeDeductions.SingleOrDefault(a => a.IsPreviousVersionOf(contractVolumeDeduction));
+        }
+
+        private bool IsLatestDeductionVersion(ContractVolumeDeduction contractVolumeDeduction)
+        {
+            var deductionNumberMatchingSequence = VolumeDeductions.Where(v => v.VolumeDeductionNumber == contractVolumeDeduction.VolumeDeductionNumber);
+
+            if (deductionNumberMatchingSequence.IsNullOrEmpty())
+            {
+                return true;
+            }
+
+            return contractVolumeDeduction.Version == deductionNumberMatchingSequence.Max(d => d.Version);
+        }
+
+        private void RequestActivationByFee(Fee fee, DateTime now, User requestingUser)
+        {
+            if (fee == null)
+            {
+                Verifier.Verify(false, "Fee Not Found", "Fee Not Found");
+            }
+            else if (fee.FeeStatus == FeeStatus.Inactive)
+            {
+                fee.ValidateInterIntra();
+                Record(new RequestContractFeeActivationAlert(fee, this, now, requestingUser));
+            }
+            else
+            {
+                Verifier.Verify(false, "NotValidStatus", $"{fee.FeeNumber}: Only Inactive fee can be requested.");
+            }
+        }
+
+        private void RequestActivationAllFees(IEnumerable<Fee> fees, DateTime now, User user)
+        {
+            if (fees == null)
+            {
+                Verifier.Verify(false, "Fees Not Found", "Fees Not Found");
+            }
+            else if (fees.Any())
+            {
+                foreach (var fee in fees)
+                {
+                    fee.ValidateInterIntra();
+                }
+                Record(new RequestContractBulkFeeActivationAlert(this, now, user));
+            }
+        }
+
+        private void RequestActivationAllVolumetricDeductions(IEnumerable<ContractVolumeDeduction> volumeDeductions, DateTime now, User user)
+        {
+            if (volumeDeductions == null)
+            {
+                Verifier.Verify(false, "Volumetric dedudctions Not Found", "Volumetric dedudctions Not Found");
+            }
+            else if (volumeDeductions.Any())
+            {
+                Record(new RequestContractBulkVolumeDeductionActivationAlert(this, now, user));
+            }
+        }
+
+        private void SendEventsOnActivate(User user, DateTime now)
+        {
+            // bulk activate if there's more than one fee
+            var fees = Fees.Where(x => x.FeeStatus == FeeStatus.Active);
+            if (fees.Any() && fees.Count() == 1)
+            {
+                var fee = fees.FirstOrDefault();
+                Record(new FeeCreatedEvent(fee.Id, fee.StartDate, (short)TypeOfAgreement.Contract, Id, user.Login, now, (short)fee.FeeType, (short)ServiceTypeId, (fee as EventBasedFee)?.EventFeeTypeId));
+                Record(new EvaluateActivatedFormulaFeeEvent(fee.Id));
+            }
+            else
+            {
+                var bulkEvents = new BulkFeeActivatedEvents();
+                foreach (var fee in Fees.Where(x => x.FeeStatus == FeeStatus.Active))
+                {
+                    bulkEvents.Events.Add(new FeeCreatedEvent(fee.Id, fee.StartDate, (short)TypeOfAgreement.Contract, Id, user.Login, now, (short)fee.FeeType, (short)ServiceTypeId, (fee as EventBasedFee)?.EventFeeTypeId));
+                    Record(new EvaluateActivatedFormulaFeeEvent(fee.Id));
+                }
+
+                if (bulkEvents.Events.Count > 1)
+                {
+                    Record(bulkEvents);
+                }
+            }
+
+            Record(new ContractActivatedNotification(this, user.FullName, now));
+            Record(new ContractActivatedEvent(Id, user.FullName));
+        }
+
+        private void SetDeductionNumber(ContractVolumDeductionTransition transition)
+        {
+            transition.VolumeDeductionNumber = GenerateNextVolumetricDeductionSequenceNumber();
+            transition.Version = 0;
+        }
+
+        private void SetDeductionVersion(ContractVolumeDeduction volumeDeduction, ContractVolumDeductionTransition transition)
+        {
+            transition.VolumeDeductionNumber = volumeDeduction.VolumeDeductionNumber;
+            transition.Version = GenerateNextVolumetricDeductionVersion(volumeDeduction.VolumeDeductionNumber);
+        }
+
+        private void UpdateDeductionToNotLatestVersion(ContractVolumeDeduction deduction)
+        {
+            VolumeDeductions.Where(d => d.VolumeDeductionNumber == deduction.VolumeDeductionNumber && d.Version != deduction.Version).ForEach(f => f.UpdateToNotLatestVersion());
+        }
+
+        private void UpdateFeesToNotLatestVersion(Fee fee)
+        {
+            Fees.Where(d => d.FeeSequenceNumber == fee.FeeSequenceNumber && d.FeeVersion != fee.FeeVersion && d.FeeType == fee.FeeType).ForEach(f => f.UpdateToNotLatestVersion());
+        }
+
+        private void UpdateLatestDeductionToLatestVersion(ContractVolumeDeduction deduction)
+        {
+            var maxVersion = VolumeDeductions.Where(d => d.Version != deduction.Version && d.VolumeDeductionNumber == deduction.VolumeDeductionNumber)
+                                             .Select(d => d.Version)
+                                             .DefaultIfEmpty()
+                                             .Max();
+            var latestVersionOfDeduction = VolumeDeductions.FirstOrDefault(d => d.VolumeDeductionNumber == deduction.VolumeDeductionNumber && d.Version == maxVersion);
+            latestVersionOfDeduction?.UpdateToLatestVersion();
+        }
+
+        private void UpdateLatestFeeToLatestVersion(Fee fee)
+        {
+            var maxVersion = Fees.Where(d => d.FeeVersion != fee.FeeVersion && d.FeeType == fee.FeeType && d.FeeSequenceNumber == fee.FeeSequenceNumber)
+                                 .Select(d => d.FeeVersion)
+                                 .DefaultIfEmpty()
+                                 .Max();
+            var feeChangedToLatestVersion = Fees.FirstOrDefault(d => d.FeeSequenceNumber == fee.FeeSequenceNumber && d.FeeVersion == maxVersion);
+            feeChangedToLatestVersion?.UpdateToLatestVersion();
+        }
+
+        private void ValidateBillableContractForFeesAndDeduction()
+        {
+            if (IsBillable)
+            {
+                return;
+            }
+
+            if (Fees.Any() || VolumeDeductions.Any())
+            {
+                Verifier.Verify(false, "FeesExist", ContractResources.UpdateContractBillableToNonBIllable);
+            }
+        }
+
+        private IEnumerable<Verification> ValidateDeductionDateRange(DateTime startDate, DateTime? endDate, string deductionNumber = null)
+        {
+            deductionNumber = deductionNumber ?? string.Empty;
+
+            yield return new Verification(startDate >= StartDate, "InvalidStartDate", $"Volumetric Deduction {deductionNumber} Start Date must be greater than Contract's Start Date {startDate.ToShortDateString()}");
+
+            if (endDate.HasValue)
+            {
+                yield return new Verification(EndDate >= endDate.Value, "InvalidEndDate", $"Volumetric Deduction {deductionNumber} End Date must be less than Contract's End Date {EndDate.ToShortDateString()}");
+            }
+        }
+
+        private IEnumerable<Verification> ValidateDeficiencyFee(ICollection<Fee> fees, Fee comparingFee)
+        {
+            var overlappingDateRangeCheck = new OverlappingDateRangeCheck();
+            var matchingFees =
+                fees.OfType<ContractDeficiencyFee>().Where(f => !f.Equals(comparingFee) && f.FeeCategory.Equals(comparingFee.FeeCategory) && f.FeeSubTypeId == comparingFee.FeeSubTypeId && f.ServiceFeeTypeId == comparingFee.ServiceFeeTypeId && f.FeeStatus.Equals(comparingFee.FeeStatus));
+
+            var hasOverlapping = overlappingDateRangeCheck.HasOverlappingDates(matchingFees, comparingFee.StartDate, comparingFee.EndDate);
+
+            yield return new Verification(!hasOverlapping, "Uniqueness", string.Format(VerificationMessage.DeficiencyFee.Uniqueness));
+        }
+
+        private bool ValidateEscalationAlertShouldRaise(DateTime currentDate)
+        {
+            var escalationStartDate = ContractEscalationPeriod.EscalationStartDate.GetFirstDayOfMonth();
+            var frequency = ContractEscalationPeriod.EscalationFrequencyPeriodType;
+            var isTodayFirstDayOfMonth = currentDate.GetFirstDayOfMonth().Day == currentDate.Day;
+
+            // If the frequency=Year, Escalation alert will always be sent on the first day of the prior month. For example, if the escalation date on the contract is Jan 1 or Jan 15 or Jan 31, the alert will be sent on December 1.
+            // If the frequency=Month, Escalation alert will always be sent 15 days prior of the escalation date.
+            if (frequency == RenewalFrequencyPeriod.Month && ContractEscalationPeriod.EscalationStartDate.AddDays(-15).Day == currentDate.Day)
+            {
+                return true;
+            }
+
+            if (frequency == RenewalFrequencyPeriod.Year && escalationStartDate.AddMonths(-1).Month == currentDate.Month && isTodayFirstDayOfMonth)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private void ValidateFeeDateRangeWithContractDate(DateTime startDate, DateTime? endDate, string feeNumber = null)
+        {
+            feeNumber = feeNumber ?? string.Empty;
+            var verifications = new List<Verification>();
+            if (CommencementDate.HasValue)
+            {
+                verifications.Add(new Verification(startDate >= CommencementDate, "StartDateParentStartDate", string.Format(VerificationMessage.StartDateParentStartDateValidation, $"Fee {feeNumber}", "Contract", "commencement date")));
+                verifications.Add(new Verification(startDate <= EndDate.Date, "StartDateParentEndDate", string.Format(VerificationMessage.StartDateParentEndDateValidation, $"Fee {feeNumber}", "Contract")));
+            }
+            else
+            {
+                verifications.Add(new Verification(startDate >= StartDate.Date, "StartDateParentStartDate", string.Format(VerificationMessage.StartDateParentStartDateValidation, $"Fee {feeNumber}", "Contract", "start date")));
+                verifications.Add(new Verification(startDate <= EndDate.Date, "StartDateParentEndDate", string.Format(VerificationMessage.StartDateParentEndDateValidation, $"Fee {feeNumber}", "Contract")));
+            }
+
+            verifications.Add(new Verification(!endDate.HasValue || endDate <= EndDate.Date, "EndDateParentEndDate", string.Format(VerificationMessage.EndDateParentEndDateValidation, $"Fee {feeNumber}", "Contract")));
+            verifications.Add(new Verification(!endDate.HasValue || endDate >= StartDate.Date, "EndDateParentStartDate", string.Format(VerificationMessage.EndDateParentStartDateValidation, $"Fee {feeNumber}", "Contract")));
+
+            Verifier.Verify(verifications);
+        }
+
+        private void ValidatePrimaryFeesEndDateWithContractDateRange(Fee fee)
+        {
+            if (fee.FeeType != FeeType.TimeBased)
+            {
+                Verifier.Verify(new Verification(AnyPrimaryActiveStatusFee, "PrimaryFeeDelete", $"Fee Id - {fee.FeeNumber}: {ContractResources.NoPrimaryActiveFee}"));
+            }
+        }
+
+        private void ValidateStatusForUpdate()
+        {
+            var isContractReadOnly = Status == ContractStatus.Expired || Status == ContractStatus.Cancelled;
+            Verifier.Verify(!isContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+        }
+
+        private void ValidateUniqueness(ContractVolumeDeduction volumeDeduction)
+        {
+            var volumeDeductionNumber = volumeDeduction.VolumeDeductionNumber;
+            VolumeDeductions.Where(x => x.VolumeDeductionNumber != volumeDeductionNumber)
+                            .ForEach(
+                                x =>
+                                {
+                                    if (x.Products.Any(p => volumeDeduction.Products.Contains(p))
+                                        && x.VolumeDeductionType == volumeDeduction.VolumeDeductionType
+                                        && x.VolumeDeductionStatus != VolumeDeductionStatus.Cancelled
+                                        && x.VolumeDeductionStatus != VolumeDeductionStatus.Deleted
+                                        && (volumeDeduction.StartDate.IsDateInRange(x.StartDate, x.EndDate)
+                                            || (volumeDeduction.EndDate != null && volumeDeduction.EndDate.IsDateInRange(x.StartDate, x.EndDate))
+                                            || x.StartDate.IsDateInRange(volumeDeduction.StartDate, volumeDeduction.EndDate)
+                                            || x.EndDate.IsDateInRange(volumeDeduction.StartDate, volumeDeduction.EndDate)))
+                                    {
+                                        if (volumeDeduction.IsRouteBased)
+                                        {
+                                            if (x.PhysicalAssets.Any(p => p.OriginDestinationTypeId == OriginDestinationType.Origin && volumeDeduction.PhysicalAssets.Any(d => d.OriginDestinationTypeId == OriginDestinationType.Origin && d.PhysicalAssetId == p.PhysicalAssetId))
+                                                && x.PhysicalAssets.Any(p => p.OriginDestinationTypeId == OriginDestinationType.Destination && volumeDeduction.PhysicalAssets.Any(d => d.OriginDestinationTypeId == OriginDestinationType.Destination && d.PhysicalAssetId == p.PhysicalAssetId)))
+                                            {
+                                                Verifier.Verify(new Verification(false, "VolumetricDeductionIsNotUnique", "Volumetric deduction is not unique"));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            if (x.PhysicalAssets.Any(p => p.OriginDestinationTypeId == OriginDestinationType.Both && volumeDeduction.PhysicalAssets.Any(d => d.OriginDestinationTypeId == OriginDestinationType.Both && d.PhysicalAssetId == p.PhysicalAssetId)))
+                                            {
+                                                Verifier.Verify(new Verification(false, "VolumetricDeductionIsNotUnique", "Volumetric deduction is not unique"));
+                                            }
+                                        }
+                                    }
+                                });
+        }
+
+        private void ValidateUniquenessOfDeficiencyFee(Fee fee)
+        {
+            if (fee.FeeType == FeeType.Deficiency)
+            {
+                Verifier.Verify(ValidateDeficiencyFee(Fees, fee));
+            }
+        }
+
+        private void VerifyFeeCanBeActivatedAndRecordEvents(User user, DateTime now, Fee oneFee)
+        {
+            var fees = new List<Fee>();
+            fees.Add(oneFee);
+            VerifyFeeCanBeActivatedAndRecordEvents(user, now, fees);
+        }
+
+        private void VerifyFeeCanBeActivatedAndRecordEvents(User user, DateTime now, IEnumerable<Fee> theFees)
+        {
+            Verifier.Verify(!IsContractReadOnly, "Expired Contract", ContractResources.ExpiredContractNonEditable);
+
+            var feeVersionCreatedEvents = new BulkFeeActivatedEvents();
+            feeVersionCreatedEvents.UserName = user.FullName;
+
+            var fees = theFees.ToList();
+
+            foreach (var fee in fees)
+            {
+                if (fee.LastModifiedBy == user)
+                {
+                    Verifier.Verify(new Verification(false, "Last Modified User", $"{fee.FeeNumber} : {VerificationMessage.Contract.SameModifiedUser}"));
+                }
+
+                var priorActiveFee = ActiveFees.SingleOrDefault(a => a.IsPreviousVersionOf(fee));
+                if (priorActiveFee != null)
+                {
+                    // version create, not fee create
+                    if (priorActiveFee.TryDelete())
+                    {
+                        Fees.Remove(priorActiveFee);
+                        Record(new RemoveFeeFromAgreement(priorActiveFee.Id, TypeOfAgreement.Contract, priorActiveFee.FeeType));
+                    }
+                    else
+                    {
+                        Record(new ContractFeeCanceledNotification(this, priorActiveFee, user.Login, now));
+                    }
+
+                    if (Status == ContractStatus.Active)
+                    {
+                        priorActiveFee.ApplyReRun();
+                        fee.ApplyReRun();
+
+                        if (fees.Count() == 1)
+                        {
+                            Record(new FeeVersionCreatedEvent
+                            {
+                                OldFeeId = priorActiveFee.Id,
+                                NewFeeId = fee.Id,
+                                AgreementTypeId = (short)TypeOfAgreement.Contract,
+                                FeeTypeId = (short)fee.FeeType,
+                                EventBasedFeeTypeId = fee.FeeType == FeeType.Event
+                                    ? ((EventBasedFee)fee).EventFeeTypeId
+                                    : (short)-1,
+                                ServiceTypeId = (short)ServiceTypeId,
+                                AgreementId = Id,
+                                OldStartDate = priorActiveFee.StartDate,
+                                NewStartDate = fee.StartDate,
+                                CreatedDateTime = now
+                            });
+                        }
+                        else
+                        {
+                            feeVersionCreatedEvents.Events.Add(
+                                new FeeVersionCreatedEvent
+                                {
+                                    OldFeeId = priorActiveFee.Id,
+                                    NewFeeId = fee.Id,
+                                    AgreementTypeId = (short)TypeOfAgreement.Contract,
+                                    FeeTypeId = (short)fee.FeeType,
+                                    EventBasedFeeTypeId = fee.FeeType == FeeType.Event
+                                        ? ((EventBasedFee)fee).EventFeeTypeId
+                                        : (short)-1,
+                                    ServiceTypeId = (short)ServiceTypeId,
+                                    AgreementId = Id,
+                                    OldStartDate = priorActiveFee.StartDate,
+                                    NewStartDate = fee.StartDate,
+                                    CreatedDateTime = now
+                                });
+                        }
+                    }
+                }
+                else
+                {
+                    if (Status == ContractStatus.Active)
+                    {
+                        // Since no prior versions, this is a new fee being added and approved for the contract
+                        if (fees.Count() == 1)
+                        {
+                            Record(new FeeCreatedEvent(fee.Id, fee.StartDate, (short)TypeOfAgreement.Contract, Id, user.Login, now, (short)fee.FeeType, (short)ServiceTypeId, fee.FeeType == FeeType.Event ? ((EventBasedFee)fee).EventFeeTypeId : (short)-1));
+                        }
+                        else
+                        {
+                            feeVersionCreatedEvents.Events.Add(new FeeCreatedEvent(fee.Id, fee.StartDate, (short)TypeOfAgreement.Contract, Id, user.Login, now, (short)fee.FeeType, (short)ServiceTypeId, fee.FeeType == FeeType.Event ? ((EventBasedFee)fee).EventFeeTypeId : (short)-1));
+                        }
+                    }
+                }
+            }
+            if (feeVersionCreatedEvents.Events.Any())
+            {
+                Record(feeVersionCreatedEvents);
+            }
+        }
+
+        private void VerifyLatestFeeVersion(Fee fee)
+        {
+            Verifier.Verify(
+                new Verification(
+                    fee.IsLatestVersion,
+                    "NotLatestVersion",
+                    $"Fee Id - {fee.FeeNumber}: {VerificationMessage.Fee.NotLatestVersionEdit}"));
+        }
+
+        private void ValidateIfIsEDIEnabledCanBeTrue()
+        {
+            Verifier.Verify((ServiceTypeId != ContractServiceType.TerminalServiceAgreement && !IsEDIEnabled) || ServiceTypeId == ContractServiceType.TerminalServiceAgreement, "IsEDIEnabled", VerificationMessage.Contract.IsEDIEnabledCannotBeTrue);
+        }
+
+        private void UpdateParticipatingCompanies(IEnumerable<AgreementParticipatingCompany> updatedParticipatingCompanies, Action<AgreementParticipatingCompany> deleteAction)
+        {
+            var removedItems = ParticipatingCompanies.Where(company => updatedParticipatingCompanies.All(a => a.Id != company.Id)).ToList();
+
+            if (removedItems.Count > 0)
+            {
+                removedItems.ForEach(removedParticipatingCompany =>
+                {
+                    ParticipatingCompanies.Remove(removedParticipatingCompany);
+                    deleteAction.Invoke(removedParticipatingCompany);
+                });
+            }
+
+            // New assets
+            var companies = updatedParticipatingCompanies.Where(x => x.Id == 0).ToList();
+            companies.ForEach(company => ParticipatingCompanies.Add(company));
+        }
+
+        private void UpdateContract(EditContractIntermediate intermediate)
+        {
+            var transitionBase = intermediate;
+            AssociateCustomerAccounts(intermediate.BusinessEntityAccounts);
+            AssetOwnerAccount = intermediate.InterCompanyAssetOwnerAccount;
+            Description = transitionBase.Description;
+            Alias = transitionBase.Alias;
+            AssetGroupId = transitionBase.AssetGroupId;
+            AssetOwnerId = transitionBase.AssetOwnerId;
+            AssetOwnerContact = transitionBase.AssetOwnerContact;
+            CustomerContact = transitionBase.CustomerContact;
+            ServiceSubTypeId = transitionBase.ServiceSubTypeId;
+            ContractTermTypeId = transitionBase.ContractTermTypeId;
+            StartDate = transitionBase.StartDate;
+            EndDate = transitionBase.EndDate;
+            ExecutionDate = transitionBase.ExecutionDateTime;
+            CommencementDate = transitionBase.CommencementDateTime;
+            ReferenceContractNumber = transitionBase.ReferenceContractNumber;
+            ContractGroupId = transitionBase.ContractGroupId;
+            InterCompanyCommercialAssetId = transitionBase.InterCompanyCommercialAssetId;
+            AssetOwnerAccountId = transitionBase.AssetOwnerAccountId;
+            CommercialAssetId = transitionBase.AssetId;
+            CommercialAsset = intermediate.CommercialAsset;
+            if (transitionBase.HasHoldback != HasHoldback)
+            {
+                Record(new ContractHoldbackEnabled(Id));
+            }
+
+            IsCycleBased = transitionBase.IsCycleBased;
+            HasHoldback = transitionBase.HasHoldback;
+            IsMovementCommercialAssetUsedForAccountCoding = transitionBase.IsMovementCommercialAssetUsedForAccountCoding;
+            LastModifiedBy = transitionBase.LastModifiedBy;
+            LastModificationDateTime = transitionBase.Now;
+            LastModifiedByUserId = intermediate.LastModifiedBy.Id;
+
+            // compare old and new billable flag for active contract
+            if (IsActive && transitionBase.IsBillable != IsBillable)
+            {
+                Verifier.Verify(false, "ActiveBillable", ContractResources.ActivateBillable);
+            }
+            else
+            {
+                IsBillable = transitionBase.IsBillable;
+            }
+
+            IsRateSheetBillable = transitionBase.IsRateSheetBillable;
+            IsTariffBillable = transitionBase.IsTariffBillable;
+            IsEDIEnabled = transitionBase.IsEDIEnabled;
+            if (Customer != null && CommercialAsset != null)
+            {
+                SmartCodeBase = $"{Customer.Code.ToUpper()}-{GetServiceTypeDisplayCode()}{transitionBase.SubTypeShortCode}-{CommercialAsset.Code.ToUpper()}-{StartDate.Year}";
+                SmartCode = SmartCodeBase; // This is a computed field from database, it gets changes based on the sequence
+            }
+
+            ValidateRequiredField();
+            ValidateParticipatingCompany();
+            ValidateStatusForUpdate();
+            Verifier.Verify(AreBusinessEntityAccountsAvailableForThisContractInThisAssetGroup(AssetGroupId, BusinessEntityAccounts.Select(x => x.Id).ToList()));
+            Verifier.Verify(AreInterCompanyAssetOwnerAccountsAvailableForThisContractInThisAssetGroup(AssetGroupId, AssetOwnerAccountId));
+            ValidateBillableContract(intermediate.DefaultSubTypeBillableValue);
+            ValidateBillableContractForFeesAndDeduction();
+            ValidateBillableAccounts();
+            ValidateRateSheetBillable();
+            ValidateAccountWhenRateSheetBillableAndContractBillable();
+            ValidateContractGroupDateBoundaries();
+            ValidateContractGroupAssociationsForCommercialAssets();
+            ValidateContractGroupAssociationsForCustomer();
+            GetJointVerifications().Verify();
+            ValidateIfIsEDIEnabledCanBeTrue();
+        }
+
+        private void ValidateParticipatingCompany()
+        {
+            if (IsJointContract)
+            {
+                Verifier.Verify(new Verification(ParticipatingCompanies.Any(), "ParticipatingAssets", string.Format(VerificationMessage.FieldRequiredMessage, "Participating Company/Participating Asset")));
+                GetJointVerifications().Verify();
+            }
+        }
+
+        private IEnumerable<Verification> GetJointVerifications()
+        {
+            var duplicates = ParticipatingCompanies.GroupBy(i => new { i.CompanyId, i.CommercialAssetId }).Where(g => g.Count() > 1);
+
+            return new List<Verification>
+            {
+                new Verification(
+                    !ParticipatingCompanies.Any(c => c.CompanyId == AssetOwnerId && c.CommercialAssetId == CommercialAssetId),
+                    "ParticipatingAssetsIssuingAsset",
+                    VerificationMessage.Contract.ParticipatingIssuingAssetCombination),
+                new Verification(
+                    !duplicates.Any(),
+                    "ParticipatingAssetsDuplicate",
+                    VerificationMessage.Contract.ParticipatingAssetsDuplicate)
+            };
+        }
+
+        private bool EventFeeForSameEventFeeSubTypeAlreadyExist(EventBasedFeeTransition transition)
+        {
+            if (transition.EventTypeId == (short)EventBasedFeeType.ServiceOrder)
+            {
+                var otherFees = Fees.Where(x => x.Id != transition.Id);
+                var feeToVerify = otherFees.OfType<EventBasedFee>().Where(
+                   c => c.FeeType == FeeType.Event
+                       && c.EventFeeTypeId == (short)EventBasedFeeType.ServiceOrder
+                       && c.ContractEventFeeSubTypeId == transition.TierHeader.SubType
+                       && c.IsLatestVersion
+                       && !(c.EndDate.HasValue
+                           ? ((transition.StartDate < c.StartDate && transition.EndDate < c.StartDate) || (transition.StartDate > c.EndDate
+                               && (transition.EndDate.HasValue
+                                   ? transition.EndDate.Value > c.EndDate.Value
+                                   : c.EndDate.Value < DateTime.MaxValue)))
+                           : transition.StartDate < c.StartDate && transition.EndDate.HasValue && transition.EndDate < c.StartDate));
+                if (feeToVerify.Any())
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ValidateProductConversionFactors(ContractDeficiencyFeeTransition transition)
+        {
+            var duplicates = transition.DeficiencyFeeProductConversionFactors.GroupBy(i => i.InventoryProductId).Where(g => g.Count() > 1);
+            Verifier.Verify(new Verification(!duplicates.Any(), "DuplicateProducts", "Each Product must be unique."));
+            foreach (var factor in transition.DeficiencyFeeProductConversionFactors)
+            {
+                Verifier.Verify(new Verification(factor.ProductConversionFactor > 1, "InvalidFactor", "The Conversion Factor must be greater than 1."));
+            }
+        }
+
+        private bool IsContractHavingContractFacilityGroups()
+        {
+            var volumeFees = Fees.OfType<VolumeFee>().Where(x => x.FacilityGroups.IsNotNullOrEmpty());
+            var blendingFees = Fees.OfType<ContractBlendingFee>().Where(x => x.FacilityGroups.IsNotNullOrEmpty());
+
+            if (volumeFees.IsNotNullOrEmpty() || blendingFees.IsNotNullOrEmpty())
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private void ValidateFeeDateWithVolumeTierPeriod(DateTime feeStartDate, DateTime? feeEndDate, IEnumerable<ContractVolumeTier> volumeTiers)
+        {
+            var minTierDate = volumeTiers.Min(b => b.StartDate);
+            var maxTierDate = volumeTiers.Max(b => b.EndDate);
+
+            if ((feeEndDate ?? DateTime.MaxValue).Date > (maxTierDate ?? DateTime.MaxValue).Date || minTierDate.Date > feeStartDate.Date)
+            {
+                Verifier.Verify(new Verification(false, "FeeDateShouldFallBetweenVolumeTierPeriod", string.Format(VerificationMessage.Fee.FeeDateShouldFallBetweenVolumeTierPeriod)));
+            }
+        }
+    }
+}

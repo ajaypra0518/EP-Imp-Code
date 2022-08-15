@@ -1,0 +1,367 @@
+// <copyright file="DateTimeExtensions.cs" company="Enterprise Products Partners L.P. (Enterprise)">
+// © Copyright 2012 - 2019, Enterprise Products Partners L.P. (Enterprise), All Rights Reserved.
+// Permission to use, copy, modify, or distribute this software source code, binaries or
+// related documentation, is strictly prohibited, without written consent from Enterprise.
+// For inquiries about the software, contact Enterprise: Enterprise Products Company Law
+// Department, 1100 Louisiana, 10th Floor, Houston, Texas 77002, phone 713-381-6500.
+// </copyright>
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+
+namespace Foundation.Coding.Extensions
+{
+    public static class DateTimeExtensions
+    {
+        /// <summary>
+        ///     I know this disturbs you. It disturbs me. I needed Hangfire to serialize date/times
+        ///     and I don't have time to find out why second resolution isn't handled by JSON.NET.
+        /// </summary>
+        /// <param name="subject"></param>
+        /// <returns></returns>
+        public static DateTime AddNoise(this DateTime subject)
+        {
+            return subject.Millisecond % 2 != 0
+                ? subject
+                : subject.AddMilliseconds(1);
+        }
+
+        /// <summary>
+        ///     Adds the specified amount of weeks (=7 days gregorian calendar) to the passed date value.
+        /// </summary>
+        /// <param name="date">The origin date.</param>
+        /// <param name="value">The amount of weeks to be added.</param>
+        /// <returns>The enw date value</returns>
+        public static DateTime AddWeeks(this DateTime date, int value)
+        {
+            return date.AddDays(value * 7);
+        }
+
+        /// <summary>
+        ///     Returns a new DateTime with the same value as the supplied DateTime except whose Kind is set to local. This does
+        ///     not
+        ///     perform a timezone conversion. An example use case is where you have a local DateTime with the default
+        ///     DateTimeKind.Unspecified,
+        ///     but some consumer needs an explicit time zone set.
+        /// </summary>
+        /// <param name="date"></param>
+        /// <returns></returns>
+        public static DateTime AsLocal(this DateTime date)
+        {
+            return new DateTime(date.Ticks, DateTimeKind.Local);
+        }
+
+        /// <summary>
+        ///     Returns a new DateTime with the same value as the supplied DateTime except whose Kind is set to local. This does
+        ///     not
+        ///     perform a timezone conversion. An example use case is where you have a local DateTime with the default
+        ///     DateTimeKind.Unspecified,
+        ///     but some consumer needs an explicit time zone set.
+        /// </summary>
+        /// <param name="date"></param>
+        /// <returns></returns>
+        public static DateTime? AsLocal(this DateTime? date)
+        {
+            if (!date.HasValue)
+            {
+                return null;
+            }
+
+            return AsLocal(date.Value);
+        }
+
+        public static DateTime Ceiling(this DateTime dateTime, DateTimeKind? dateTimeKindOverride = null)
+        {
+            return new DateTime(dateTime.Year, dateTime.Month, dateTime.Day, 23, 59, 59, dateTimeKindOverride ?? dateTime.Kind);
+        }
+
+        public static DateTime Floor(this DateTime dateTime)
+        {
+            return dateTime.Date;
+        }
+
+        public static int GetCountDaysInQuarter(this DateTime date)
+        {
+            var quarterStartDate = new DateTime(date.Year, date.Month, 1);
+            var quarterEndDate = quarterStartDate.AddMonths(3).AddDays(-1);
+
+            return quarterEndDate.Subtract(quarterStartDate).Days;
+        }
+
+        /// <summary>
+        ///     Returns the number of days in the provided year.
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <returns>The number of days.</returns>
+        public static int GetCountDaysInYear(this DateTime date)
+        {
+            var yearStartDate = new DateTime(date.Year, 1, 1);
+            var nextYearStartDate = new DateTime(date.Year + 1, 1, 1);
+
+            return nextYearStartDate.Subtract(yearStartDate).Days;
+        }
+
+        /// <summary>
+        ///     Returns the number of days in the month of the provided date.
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <returns>The number of days.</returns>
+        public static int GetCountDaysOfMonth(this DateTime date)
+        {
+            var nextMonth = date.AddMonths(1);
+
+            return new DateTime(nextMonth.Year, nextMonth.Month, 1).AddDays(-1).Day;
+        }
+
+        public static IEnumerable<DateTime> GetDatesBetween(this DateTime startDate, DateTime endDate)
+        {
+            for (var date = startDate.GetFirstDayOfYear(); date <= endDate.GetLastDayOfYear(); date = date.AddDays(1))
+            {
+                yield return date;
+            }
+        }
+
+        /// <summary>
+        ///     Returns the first day of the month of the provided date.
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <returns>The first day of the month</returns>
+        public static DateTime GetFirstDayOfMonth(this DateTime date)
+        {
+            return new DateTime(date.Year, date.Month, 1);
+        }
+
+        /// <summary>
+        ///     Gets the first day of the week using the current culture.
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <returns>The first day of the week</returns>
+        /// <remarks>
+        ///     modified by jtolar to implement culture settings
+        /// </remarks>
+        public static DateTime GetFirstDayOfWeek(this DateTime date)
+        {
+            return date.GetFirstDayOfWeek(CultureInfo.CurrentCulture);
+        }
+
+        /// <summary>
+        ///     Gets the first day of the week using the specified culture.
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <param name="cultureInfo">The culture to determine the first weekday of a week.</param>
+        /// <returns>The first day of the week</returns>
+        public static DateTime GetFirstDayOfWeek(this DateTime date, CultureInfo cultureInfo)
+        {
+            cultureInfo = cultureInfo ?? CultureInfo.CurrentCulture;
+
+            var firstDayOfWeek = cultureInfo.DateTimeFormat.FirstDayOfWeek;
+            while (date.DayOfWeek != firstDayOfWeek)
+            {
+                date = date.AddDays(-1);
+            }
+
+            return date;
+        }
+
+        public static DateTime GetFirstDayOfYear(this DateTime date)
+        {
+            return new DateTime(date.Year, 1, 1);
+        }
+
+        /// <summary>
+        ///     Returns the last day of the month of the provided date.
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <returns>The last day of the month.</returns>
+        public static DateTime GetLastDayOfMonth(this DateTime date)
+        {
+            return new DateTime(date.Year, date.Month, GetCountDaysOfMonth(date));
+        }
+
+        public static DateTime GetLastDayOfYear(this DateTime date)
+        {
+            return new DateTime(date.Year, 12, 31);
+        }
+
+        /// <summary>
+        ///     Gets the next occurence of the specified weekday.
+        /// </summary>
+        /// <param name="date">The base date.</param>
+        /// <param name="weekday">The desired weekday.</param>
+        /// <returns>The calculated date.</returns>
+        /// <example>
+        ///     <code>
+        ///         var lastMonday = DateTime.Now.GetNextWeekday(DayOfWeek.Monday);
+        ///     </code>
+        /// </example>
+        public static DateTime GetNextWeekday(this DateTime date, DayOfWeek weekday)
+        {
+            while (date.DayOfWeek != weekday)
+            {
+                date = date.AddDays(1);
+            }
+
+            return date;
+        }
+
+        /// <summary>
+        ///     Gets the week number for a provided date time value based on a specific culture.
+        /// </summary>
+        /// <param name="dateTime">The date time.</param>
+        /// <param name="culture">Specific culture</param>
+        /// <returns>The week number</returns>
+        /// <remarks>
+        ///     modified by jtolar to implement culture settings
+        /// </remarks>
+        public static int GetWeekOfYear(this DateTime dateTime, CultureInfo culture)
+        {
+            var calendar = culture.Calendar;
+            var dateTimeFormat = culture.DateTimeFormat;
+
+            return calendar.GetWeekOfYear(dateTime, dateTimeFormat.CalendarWeekRule, dateTimeFormat.FirstDayOfWeek);
+        }
+
+        /// <summary>
+        ///     Gets the week number for a provided date time value based on the current culture settings.
+        ///     Uses DefaultCulture from ExtensionMethodSetting
+        /// </summary>
+        /// <param name="dateTime">The date time.</param>
+        /// <returns>The week number</returns>
+        /// <remarks>
+        ///     modified by jtolar to implement culture settings
+        /// </remarks>
+        public static int GetWeekOfYear(this DateTime dateTime)
+        {
+            return GetWeekOfYear(dateTime, CultureInfo.CurrentCulture);
+        }
+
+        public static bool IsAcrossOneMonthOrLess(this DateTime firstDate, DateTime secondDate)
+        {
+            return secondDate.Year == firstDate.Year
+                ? (secondDate.Month - firstDate.Month) <= 1
+                : ((12 * (secondDate.Year - firstDate.Year)) + secondDate.Month - firstDate.Month) <= 1;
+        }
+
+        public static bool IsBetween(this DateTime date, DateTime fromDate, DateTime toDate, bool inclusive = false)
+        {
+            return inclusive
+                ? date >= fromDate && date <= toDate
+                : date > fromDate && date < toDate;
+        }
+
+        public static bool IsInSameMonth(this DateTime firstDate, DateTime secondDate)
+        {
+            return firstDate.Month == secondDate.Month && firstDate.Year == secondDate.Year;
+        }
+
+        public static bool IsLaterMonthThan(this DateTime subjectMonth, DateTime referenceMonth)
+        {
+            var refmon = new DateTime(referenceMonth.Year, referenceMonth.Month, 1);
+            var submon = new DateTime(subjectMonth.Year, subjectMonth.Month, 1);
+
+            return submon > refmon;
+        }
+
+        public static bool IsOlderMonthThan(this DateTime subjectMonth, DateTime referenceMonth)
+        {
+            var refmon = new DateTime(referenceMonth.Year, referenceMonth.Month, 1);
+
+            return subjectMonth < refmon;
+        }
+
+        /// <summary>
+        ///     Indicates whether the specified date is a weekend (Saturday or Sunday).
+        /// </summary>
+        /// <param name="date">The date.</param>
+        /// <returns>
+        ///     <c>true</c> if the specified date is a weekend; otherwise, <c>false</c>.
+        /// </returns>
+        public static bool IsWeekend(this DateTime date)
+        {
+            return date.DayOfWeek.EqualsAny(DayOfWeek.Saturday, DayOfWeek.Sunday);
+        }
+
+        public static string ToDateHourMinuteAmPmString(this DateTime dateTime)
+        {
+            return dateTime.ToString(DateFormats.DateAndTime12Hms);
+        }
+
+        public static string ToDateHourMinuteAmPmString(this DateTime? dateTime)
+        {
+            return dateTime.ToString(DateFormats.DateAndTime12Hms);
+        }
+
+        public static string ToDateHourMinuteString(this DateTime dateTime)
+        {
+            return dateTime.ToString(DateFormats.DateAndTime24Hm);
+        }
+
+        public static string ToDateHourMinuteString(this DateTime? dateTime)
+        {
+            return dateTime?.ToDateHourMinuteString() ?? string.Empty;
+        }
+
+        public static string ToDateString(this DateTime dateTime)
+        {
+            return dateTime.ToString(DateFormats.Date);
+        }
+
+        public static string ToDateString(this DateTime? dateTime)
+        {
+            return dateTime.HasValue
+                ? dateTime.Value.ToDateString()
+                : string.Empty;
+        }
+
+        public static string ToDateTimeString(this DateTime dateTime)
+        {
+            return dateTime.ToString(DateFormats.DateAndTime24Hms);
+        }
+
+        public static string ToDateTimeString(this DateTime? dateTime)
+        {
+            return dateTime?.ToDateTimeString() ?? string.Empty;
+        }
+
+        public static DateTime ToDayResolution(this DateTime dateTime, DateTimeKind? kindOverride = null)
+        {
+            return new DateTime(dateTime.Year, dateTime.Month, dateTime.Day, 0, 0, 0, kindOverride ?? dateTime.Kind);
+        }
+
+        public static DateTime? ToDayResolution(this DateTime? date, DateTimeKind? kindOverride = null)
+        {
+            return date?.ToDayResolution(kindOverride);
+        }
+
+        public static string ToFormattedValueOrEvergreen(this DateTime? dateTime, string format = DateFormats.Date)
+        {
+            return dateTime?.ToString(format) ?? "Evergreen";
+        }
+
+        public static DateTime ToLastDayOfMonth(this DateTime date, DateTimeKind? dateTimeKindOverride = null)
+        {
+            return new DateTime(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month), 0, 0, 0, dateTimeKindOverride ?? date.Kind);
+        }
+
+        public static DateTime ToMinuteResolution(this DateTime date)
+        {
+            return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerMinute));
+        }
+
+        public static DateTime ToSecondResolution(this DateTime date)
+        {
+            return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerSecond));
+        }
+
+        public static DateTime? ToSecondResolution(this DateTime? date)
+        {
+            return date?.ToSecondResolution();
+        }
+
+        public static string ToString(this DateTime? dateTime, string format)
+        {
+            return dateTime?.ToString(format) ?? string.Empty;
+        }
+    }
+}
